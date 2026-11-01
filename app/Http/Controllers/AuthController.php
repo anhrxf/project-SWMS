@@ -1,0 +1,149 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\User;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rules\Password;
+use Illuminate\View\View;
+
+class AuthController extends Controller
+{
+    public function showLogin(): View|RedirectResponse
+    {
+        if (Auth::check()) {
+            return redirect()->route('dashboard');
+        }
+        return view('auth.login');
+    }
+
+    public function login(Request $request): RedirectResponse
+    {
+        $credentials = $request->validate([
+            'email' => ['required', 'string', 'email'],
+            'password' => ['required', 'string'],
+        ], [
+            'email.required' => 'Email wajib diisi.',
+            'email.email' => 'Format email tidak valid.',
+            'password.required' => 'Kata sandi wajib diisi.',
+        ]);
+
+        $remember = $request->boolean('remember');
+
+        if (Auth::attempt($credentials, $remember)) {
+            $request->session()->regenerate();
+            
+            $user = Auth::user();
+            return redirect()->intended(route('dashboard'))
+                ->with('success', 'Selamat datang kembali, ' . $user->name . '!');
+        }
+
+        return back()->withErrors([
+            'email' => 'Kredensial yang diberikan tidak cocok dengan data kami.',
+        ])->onlyInput('email');
+    }
+
+    public function showRegister(): View|RedirectResponse
+    {
+        if (Auth::check()) {
+            return redirect()->route('dashboard');
+        }
+        return view('auth.register');
+    }
+
+    public function register(Request $request): RedirectResponse
+    {
+        $emailRule = app()->environment('testing') ? 'email:rfc' : 'email:rfc,dns';
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'string', $emailRule, 'max:255', 'unique:users,email'],
+            'phone' => ['required', 'string', 'min:9', 'max:20', 'unique:users,phone'],
+            'address' => ['nullable', 'string', 'max:500'],
+            'password' => ['required', 'confirmed', Password::defaults()],
+        ], [
+            'name.required' => 'Nama lengkap wajib diisi.',
+            'email.required' => 'Alamat email wajib diisi.',
+            'email.email' => 'Email tidak valid.',
+            'email.unique' => 'Alamat email ini sudah pernah terdaftar sebelumnya. Silakan gunakan email yang berbeda.',
+            'phone.required' => 'Nomor HP wajib diisi.',
+            'phone.unique' => 'Nomor telah terdaftar.',
+            'phone.min' => 'Nomor HP minimal terdiri dari 9 digit angka.',
+            'password.required' => 'Kata sandi wajib diisi.',
+            'password.confirmed' => 'Konfirmasi kata sandi tidak cocok.',
+        ]);
+
+        $user = User::create([
+            'name' => $validated['name'],
+            'email' => $validated['email'],
+            'phone' => $validated['phone'],
+            'address' => $validated['address'] ?? null,
+            'role' => 'user', // Default registered users are regular users
+            'password' => Hash::make($validated['password']),
+        ]);
+
+        Auth::login($user);
+        $request->session()->regenerate();
+
+        return redirect()->route('dashboard')
+            ->with('success', 'Registrasi berhasil! Selamat datang di Smart Waste Management System.');
+    }
+
+    public function logout(Request $request): RedirectResponse
+    {
+        Auth::logout();
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+
+        return redirect()->route('login')
+            ->with('info', 'Anda telah berhasil keluar dari sistem.');
+    }
+
+    public function profile(): View
+    {
+        return view('profile.index', [
+            'user' => Auth::user(),
+        ]);
+    }
+
+    public function updateProfile(Request $request): RedirectResponse
+    {
+        $user = Auth::user();
+
+        $emailRule = app()->environment('testing') ? 'email:rfc' : 'email:rfc,dns';
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'string', $emailRule, 'max:255', 'unique:users,email,' . $user->id],
+            'phone' => ['required', 'string', 'min:9', 'max:20', 'unique:users,phone,' . $user->id],
+            'address' => ['nullable', 'string', 'max:500'],
+            'password' => ['nullable', 'confirmed', Password::defaults()],
+        ], [
+            'name.required' => 'Nama lengkap wajib diisi.',
+            'email.required' => 'Alamat email wajib diisi.',
+            'email.email' => 'Email tidak valid.',
+            'email.unique' => 'Alamat email ini sudah digunakan oleh akun lain. Gunakan email yang berbeda.',
+            'phone.required' => 'Nomor HP wajib diisi.',
+            'phone.unique' => 'Nomor telah terdaftar.',
+            'phone.min' => 'Nomor HP minimal terdiri dari 9 digit angka.',
+        ]);
+
+        $updateData = [
+            'name' => $validated['name'],
+            'email' => $validated['email'],
+            'phone' => $validated['phone'],
+            'address' => $validated['address'] ?? null,
+        ];
+
+        if (!empty($validated['password'])) {
+            $updateData['password'] = Hash::make($validated['password']);
+        }
+
+        $user->update($updateData);
+
+        return back()->with('success', 'Profil Anda berhasil diperbarui!');
+    }
+}
