@@ -1,318 +1,168 @@
-# Dokumentasi Lengkap REST API - Smart Waste Management System (SWMS)
+# Dokumentasi REST API SWMS
 
-Versi: **v1.0.0**  
-Base URL: `http://localhost:8000/api/v1`  
-Format Respons: `application/json`  
-Skema Autentikasi: `Bearer <token>` (Laravel Sanctum)
+Versi: `v1`
 
----
+Base URL lokal: `http://localhost:8000/api/v1`
+Format respons: JSON
 
-## 1. Autentikasi Pengguna
+## Autentikasi dan format request
 
-### A. Register Akun Baru
-- **Endpoint**: `POST /api/v1/auth/register`
-- **Akses**: Publik
-- **Headers**: `Content-Type: application/json`, `Accept: application/json`
+Endpoint terautentikasi menggunakan Laravel Sanctum personal access token. Kirim token pada setiap request terautentikasi:
 
-#### Request Body
+```http
+Authorization: Bearer &lt;token&gt;
+Accept: application/json
+```
+
+Token dikembalikan oleh register dan login. Gunakan `application/json` untuk request biasa. Untuk request yang mengunggah gambar, gunakan `multipart/form-data` dan biarkan HTTP client menentukan boundary `Content-Type`.
+
+## Endpoint autentikasi
+
+### Register
+
+- `POST /auth/register` — publik; berhasil `201 Created`.
+- Email wajib valid dan unik.
+- Nomor HP wajib, unik, dan memiliki panjang 9–20 karakter.
+- `address` opsional.
+- Aplikasi mengirim tautan verifikasi dengan masa berlaku 60 menit.
+- Respons menyertakan token akses, `email_verified: false`, dan `verification_url`.
+- Tautan dapat dibuka tanpa login karena URL bertanda tangan dan kedaluwarsa.
+- Request API laporan ditolak dengan HTTP 403 sampai email diverifikasi.
+
+Request JSON:
+
 ```json
 {
   "name": "Budi Santoso",
-  "email": "budi.santoso@email.com",
+  "email": "budi@example.com",
   "phone": "081234567890",
-  "address": "Jl. Merdeka No. 45, Jakarta",
+  "address": "Jl. Merdeka No. 45",
   "password": "password123",
   "password_confirmation": "password123"
 }
 ```
 
-#### Response Success (201 Created)
+Respons mengandung `success`, `message`, serta `data.user`, `data.token`, `data.token_type` (`Bearer`), `data.email_verified`, dan `data.verification_url`.
+
+### Login
+
+- `POST /auth/login` — publik; berhasil `200 OK`.
+- `device_name` opsional; default `swms_mobile_app`.
+
+Request JSON:
+
 ```json
 {
-  "success": true,
-  "message": "Registrasi berhasil.",
-  "data": {
-    "user": {
-      "id": 4,
-      "name": "Budi Santoso",
-      "email": "budi.santoso@email.com",
-      "role": "user",
-      "phone": "081234567890",
-      "address": "Jl. Merdeka No. 45, Jakarta"
-    },
-    "token": "1|w7r9VwQ62D...sanctum_token...",
-    "token_type": "Bearer"
-  }
+  "email": "budi@example.com",
+  "password": "password123",
+  "device_name": "Flutter_Android"
 }
 ```
 
----
+Respons mengandung `success`, `message`, serta `data.user`, `data.token`, `data.token_type`, dan `data.email_verified`. Untuk akun belum diverifikasi, login tetap menghasilkan token agar klien dapat mengambil profil atau meminta tautan baru; akses ke API laporan tetap ditolak.
+Kredensial tidak cocok menghasilkan `401 Unauthorized`.
 
-### B. Login Akun
-- **Endpoint**: `POST /api/v1/auth/login`
-- **Akses**: Publik
+### Profil
 
-#### Request Body
-```json
-{
-  "email": "user@swms.com",
-  "password": "password",
-  "device_name": "Mobile_Flutter"
-}
-```
+- `GET /auth/profile` — terautentikasi; `200 OK`.
+- Data profil ada di `data`: `id`, `name`, `email`, `role`, `phone`, `address`, `email_verified`, `email_verified_at`, dan `created_at`.
 
-#### Response Success (200 OK)
-```json
-{
-  "success": true,
-  "message": "Login berhasil.",
-  "data": {
-    "user": {
-      "id": 2,
-      "name": "Budi Santoso",
-      "email": "user@swms.com",
-      "role": "user",
-      "phone": "081298765432",
-      "address": "Jl. Kebon Jeruk Raya No. 12, Jakarta Barat"
-    },
-    "token": "2|eR7u91xZ...token...",
-    "token_type": "Bearer"
-  }
-}
-```
+### Logout
 
----
+- `POST /auth/logout` — terautentikasi; `200 OK`.
+- Mencabut token yang digunakan pada request tersebut.
 
-### C. Profil Pengguna
-- **Endpoint**: `GET /api/v1/auth/profile`
-- **Akses**: Terotentikasi (`Bearer <token>`)
+### Kirim ulang verifikasi email
 
-#### Response Success (200 OK)
-```json
-{
-  "success": true,
-  "data": {
-    "id": 2,
-    "name": "Budi Santoso",
-    "email": "user@swms.com",
-    "role": "user",
-    "phone": "081298765432",
-    "address": "Jl. Kebon Jeruk Raya No. 12, Jakarta Barat",
-    "created_at": "2026-11-01T10:30:00.000000Z"
-  }
-}
-```
+- `POST /auth/email/verification-notification` — terautentikasi; dibatasi enam request per menit.
+- Mengirim notifikasi verifikasi baru untuk akun belum terverifikasi; sukses `202 Accepted`.
+- Jika sudah terverifikasi, sukses `200 OK` dengan pesan bahwa alamat telah diverifikasi.
 
----
+Link verifikasi dikirim melalui email dan juga tersedia sebagai `verification_url` pada respons register. Link berlaku 60 menit dan memiliki signature. Buka URL tersebut di browser; login tidak diperlukan.
 
-### D. Logout
-- **Endpoint**: `POST /api/v1/auth/logout`
-- **Akses**: Terotentikasi (`Bearer <token>`)
+Mailer lokal pada `.env.example` menggunakan driver `log`; email verifikasi ditulis ke
+`storage/logs/laravel.log`, bukan dikirim ke inbox. Atur SMTP dan `APP_URL` publik untuk
+pengiriman nyata. Untuk Gmail, gunakan App Password dengan verifikasi dua langkah aktif,
+bukan kata sandi akun Google.
 
-#### Response Success (200 OK)
-```json
-{
-  "success": true,
-  "message": "Berhasil logout dan token dicabut."
-}
-```
+## Klasifikasi gambar
 
----
+### `POST /ai/classify`
 
-## 2. Fitur AI Image Classification
+Publik, tidak memerlukan token. Request `multipart/form-data` berisi field wajib `image` (JPEG, PNG, JPG, atau WEBP; maksimum 10 MB).
 
-### Deteksi Kategori Sampah Gambar
-- **Endpoint**: `POST /api/v1/ai/classify`
-- **Akses**: Publik / Terotentikasi
-- **Content-Type**: `multipart/form-data`
+Berhasil menghasilkan `200 OK` dengan `success`, `message`, dan `data`. Data berisi `source`, `category`, `confidence`, `label`, `breakdown`, dan `recommendation` (`type`, `action`, `color_code`, `bin`). Kategori yang dikembalikan classifier: `organic`, `plastic`, atau `paper`.
 
-#### Parameter Form-Data
-- `image`: File berkas gambar (JPG, PNG, WEBP - Maksimal 10MB)
+## Laporan
 
-#### Response Success (200 OK)
-```json
-{
-  "success": true,
-  "message": "Analisis gambar berhasil dilakukan.",
-  "data": {
-    "source": "builtin_smart_classifier",
-    "category": "plastic",
-    "confidence": 95.4,
-    "label": "Sampah Plastik (Plastic Waste)",
-    "breakdown": {
-      "organic": 2.3,
-      "plastic": 95.4,
-      "paper": 2.3
-    },
-    "recommendation": {
-      "type": "Daur Ulang Plastik / Bank Sampah",
-      "action": "Bilas hingga bersih dari sisa cairan atau minyak, remukkan botol untuk menghemat ruang, dan kumpulkan ke Bank Sampah terdekat.",
-      "color_code": "#3b82f6",
-      "bin": "Tempat Sampah Kuning (Anorganik / Plastik)"
-    }
-  }
-}
-```
+### Daftar laporan — `GET /reports`
 
----
+Terautentikasi dan email harus sudah diverifikasi. Admin melihat seluruh laporan; warga hanya melihat laporan miliknya. Jika belum diverifikasi, API merespons `403 Forbidden`.
 
-## 3. Manajemen Laporan Sampah
+Query opsional:
 
-### A. Mendapatkan Daftar Laporan
-- **Endpoint**: `GET /api/v1/reports`
-- **Akses**: Terotentikasi (`Bearer <token>`)
-- **Query Parameters**:
-  - `status`: `pending` | `in_progress` | `completed` | `rejected`
-  - `category`: `organic` | `plastic` | `paper` | `other`
-  - `search`: Kata kunci pencarian (judul / lokasi / nama)
-  - `page`: Nomor halaman paginasi (default: 1)
-  - `per_page`: Jumlah data per halaman (default: 15)
+| Parameter | Nilai / arti |
+|---|---|
+| `status` | `pending`, `in_progress`, `completed`, `rejected` |
+| `category` | `organic`, `plastic`, `paper`, `other` |
+| `search` | Mencari pada judul, deskripsi, dan alamat lokasi |
+| `page` | Nomor halaman |
+| `per_page` | Jumlah item per halaman; default `15` |
 
-#### Response Success (200 OK)
-```json
-{
-  "success": true,
-  "data": {
-    "current_page": 1,
-    "data": [
-      {
-        "id": 1,
-        "user_id": 2,
-        "title": "Timbunan Botol Plastik dan Gelas Mineral di Dekat Halte",
-        "description": "Banyak botol plastik sekali pakai dan gelas air mineral berserakan di sekitar halte busway.",
-        "waste_category": "plastic",
-        "ai_detected_category": "plastic",
-        "ai_confidence": 95.4,
-        "image_path": "reports/plastic_bottles.jpg",
-        "latitude": -6.175392,
-        "longitude": 106.827153,
-        "location_address": "Jl. Medan Merdeka Barat, Halte Monas, Gambir",
-        "status": "completed",
-        "admin_notes": "Armada 01 Dinas Lingkungan Hidup telah mengangkut sampah plastik.",
-        "resolved_at": "2026-10-28T09:00:00.000000Z",
-        "created_at": "2026-10-27T08:00:00.000000Z",
-        "user": {
-          "id": 2,
-          "name": "Budi Santoso",
-          "email": "user@swms.com"
-        }
-      }
-    ],
-    "total": 7,
-    "per_page": 15
-  }
-}
-```
+Respons membungkus objek paginator Laravel di dalam `data`; objek tersebut mencakup `current_page`, daftar `data`, `total`, dan `per_page`.
 
----
+### Membuat laporan — `POST /reports`
 
-### B. Membuat Laporan Sampah Baru
-- **Endpoint**: `POST /api/v1/reports`
-- **Akses**: Terotentikasi (`Bearer <token>`)
-- **Content-Type**: `multipart/form-data`
+Terautentikasi sebagai warga dengan email terverifikasi; akun admin atau akun belum terverifikasi menerima `403 Forbidden`. Request `multipart/form-data`.
 
-#### Parameter Form-Data
-- `title` (string, required): Judul ringkas laporan
-- `description` (string, required): Keterangan kondisi sampah
-- `waste_category` (string, required): `organic`, `plastic`, `paper`, atau `other`
-- `image` (file, required): File foto sampah (JPG, PNG, WEBP)
-- `latitude` (numeric, optional): Koordinat lintang GPS (cth: `-6.2088`)
-- `longitude` (numeric, optional): Koordinat bujur GPS (cth: `106.8456`)
-- `location_address` (string, optional): Alamat patokan fisik
-- `ai_detected_category` (string, optional): Hasil deteksi AI jika diproses sebelum submit
-- `ai_confidence` (numeric, optional): Persentase keyakinan AI
+| Field | Validasi |
+|---|---|
+| `title` | Wajib, string, maksimum 255 karakter |
+| `description` | Wajib, string |
+| `waste_category` | Wajib: `organic`, `plastic`, `paper`, atau `other` |
+| `image` | Wajib; JPEG, PNG, JPG, atau WEBP; maksimum 10 MB |
+| `latitude` | Opsional, numerik antara -90 dan 90 |
+| `longitude` | Opsional, numerik antara -180 dan 180 |
+| `location_address` | Opsional, string, maksimum 500 karakter |
+| `ai_detected_category` | Opsional, string |
+| `ai_confidence` | Opsional, numerik |
 
-#### Response Success (201 Created)
-```json
-{
-  "success": true,
-  "message": "Laporan berhasil dibuat.",
-  "data": {
-    "id": 8,
-    "user_id": 2,
-    "title": "Timbunan Sampah Plastik Pinggir Selokan",
-    "description": "Botol plastik menumpuk di saluran air depan ruko.",
-    "waste_category": "plastic",
-    "ai_detected_category": "plastic",
-    "ai_confidence": 94.2,
-    "image_path": "reports/92f8a...jpg",
-    "status": "pending",
-    "latitude": -6.200000,
-    "longitude": 106.816600,
-    "location_address": "Jl. Sudirman No. 12",
-    "created_at": "2026-11-01T11:00:00.000000Z"
-  }
-}
-```
+Sukses menghasilkan `201 Created` dengan laporan pada `data`, termasuk relasi `user` dan `status_logs`. Status awal laporan adalah `pending`.
 
----
+### Detail laporan — `GET /reports/{report}`
 
-### C. Detail Laporan Sampah
-- **Endpoint**: `GET /api/v1/reports/{id}`
-- **Akses**: Terotentikasi (`Bearer <token>`)
+Terautentikasi dengan email terverifikasi. Admin dapat melihat semua laporan; warga hanya dapat melihat laporan miliknya. Respons sukses `200 OK`:
 
-#### Response Success (200 OK)
-```json
-{
-  "success": true,
-  "data": {
-    "report": {
-      "id": 1,
-      "title": "Timbunan Botol Plastik dan Gelas Mineral di Dekat Halte",
-      "waste_category": "plastic",
-      "status": "completed",
-      "status_logs": [
-        {
-          "id": 1,
-          "report_id": 1,
-          "previous_status": null,
-          "new_status": "pending",
-          "notes": "Laporan awal dibuat oleh pelapor."
-        },
-        {
-          "id": 2,
-          "report_id": 1,
-          "previous_status": "pending",
-          "new_status": "completed",
-          "notes": "Armada telah membersihkan lokasi."
-        }
-      ]
-    },
-    "image_url": "http://localhost:8000/storage/reports/plastic_bottles.jpg",
-    "recommendation": {
-      "type": "Daur Ulang Plastik / Bank Sampah",
-      "action": "Bilas bersih dan daur ulang ke bank sampah.",
-      "bin": "Tempat Sampah Kuning (Plastik)"
-    }
-  }
-}
-```
+- `data.report`: detail laporan beserta relasi pengguna dan log status.
+- `data.image_url`: URL gambar.
+- `data.recommendation`: rekomendasi berdasarkan kategori sampah.
 
----
+Laporan tidak ditemukan menghasilkan `404 Not Found`; warga yang mencoba melihat laporan milik pengguna lain menerima `403 Forbidden`.
 
-### D. Update Status Laporan (Khusus Administrator)
-- **Endpoint**: `POST /api/v1/reports/{id}/status`
-- **Akses**: Terotentikasi Role Admin (`Bearer <admin_token>`)
-- **Content-Type**: `application/json`
+### Memperbarui status — `POST /reports/{report}/status`
 
-#### Request Body
+Khusus admin dengan email terverifikasi. Request JSON:
+
 ```json
 {
   "status": "completed",
-  "admin_notes": "Petugas kebersihan telah mengangkut sampah dan membersihkan area trotoar."
+  "admin_notes": "Sampah telah diangkut."
 }
 ```
 
-#### Response Success (200 OK)
-```json
-{
-  "success": true,
-  "message": "Status laporan berhasil diperbarui.",
-  "data": {
-    "id": 1,
-    "status": "completed",
-    "admin_notes": "Petugas kebersihan telah mengangkut sampah dan membersihkan area trotoar.",
-    "resolved_at": "2026-11-01T11:15:00.000000Z"
-  }
-}
-```
+- `status` wajib: `pending`, `in_progress`, `completed`, atau `rejected`.
+- `admin_notes` opsional, string maksimum 1.000 karakter.
+- Tidak ada urutan transisi yang diwajibkan oleh endpoint.
+- Sukses menghasilkan `200 OK`, memperbarui `data` laporan, dan menambahkan entri riwayat status.
+- Akun non-admin menerima `403 Forbidden`.
+
+## Respons error umum
+
+| HTTP | Arti |
+|---|---|
+| `401` | Token tidak ada atau tidak valid. |
+| `403` | Akses ditolak karena role atau kepemilikan laporan. |
+| `404` | Laporan tidak ditemukan. |
+| `422` | Validasi gagal; Laravel mengembalikan `message` dan detail per-field di `errors`. |
+
+Request API harus menyertakan `Accept: application/json` agar error validasi dikembalikan sebagai JSON.

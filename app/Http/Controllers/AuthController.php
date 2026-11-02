@@ -37,6 +37,12 @@ class AuthController extends Controller
             $request->session()->regenerate();
             
             $user = Auth::user();
+
+            if (!$user->hasVerifiedEmail()) {
+                return redirect()->route('verification.notice')
+                    ->with('info', 'Verifikasi email Anda sebelum menggunakan aplikasi.');
+            }
+
             return redirect()->intended(route('dashboard'))
                 ->with('success', 'Selamat datang kembali, ' . $user->name . '!');
         }
@@ -87,9 +93,10 @@ class AuthController extends Controller
 
         Auth::login($user);
         $request->session()->regenerate();
+        $user->sendEmailVerificationNotification();
 
-        return redirect()->route('dashboard')
-            ->with('success', 'Registrasi berhasil! Selamat datang di Smart Waste Management System.');
+        return redirect()->route('verification.notice')
+            ->with('info', 'Akun berhasil dibuat. Periksa email Anda untuk memverifikasi akun sebelum masuk.');
     }
 
     public function logout(Request $request): RedirectResponse
@@ -138,11 +145,21 @@ class AuthController extends Controller
             'address' => $validated['address'] ?? null,
         ];
 
+        $emailChanged = strcasecmp($user->email, $validated['email']) !== 0;
+
         if (!empty($validated['password'])) {
             $updateData['password'] = Hash::make($validated['password']);
         }
 
         $user->update($updateData);
+
+        if ($emailChanged) {
+            $user->markEmailAsUnverified();
+            $user->sendEmailVerificationNotification();
+
+            return redirect()->route('verification.notice')
+                ->with('info', 'Email diperbarui. Verifikasi alamat email baru sebelum menggunakan aplikasi.');
+        }
 
         return back()->with('success', 'Profil Anda berhasil diperbarui!');
     }

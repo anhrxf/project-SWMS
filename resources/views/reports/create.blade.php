@@ -7,7 +7,14 @@
 @section('content')
 <div class="max-w-4xl mx-auto space-y-6" x-data="reportCreateComponent()">
 
-    <form method="POST" action="{{ route('reports.store') }}" enctype="multipart/form-data" class="space-y-6">
+    <form x-ref="reportForm"
+          @input="queueDraftSave()"
+          @change="queueDraftSave()"
+          @submit="submitReport($event)"
+          method="POST"
+          action="{{ route('reports.store') }}"
+          enctype="multipart/form-data"
+          class="space-y-6">
         @csrf
 
         <!-- Hidden AI Results & Coordinates -->
@@ -220,15 +227,19 @@
                     </div>
 
                     <!-- Submit Button -->
-                    <div class="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
-                        <a href="{{ route('reports.index') }}" class="px-5 py-2.5 rounded-xl bg-slate-100 text-slate-700 text-xs font-semibold hover:bg-slate-200 transition">
-                            Batal
-                        </a>
-                        <button type="submit" 
-                                class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs transition">
-                            <i class="fa-solid fa-paper-plane"></i>
-                            <span>Kirim laporan</span>
-                        </button>
+                    <div class="pt-4 border-t border-slate-100 flex items-center justify-between gap-3">
+                        <p x-text="draftMessage" class="text-[11px] text-slate-500" role="status" aria-live="polite"></p>
+                        <div class="flex items-center justify-end gap-3">
+                            <a href="{{ route('reports.index') }}" class="px-5 py-2.5 rounded-xl bg-slate-100 text-slate-700 text-xs font-semibold hover:bg-slate-200 transition">
+                                Batal
+                            </a>
+                            <button type="submit"
+                                    :disabled="submitting"
+                                    class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs transition">
+                                <i class="fa-solid fa-paper-plane"></i>
+                                <span x-text="submitting ? 'Menyimpan draf...' : 'Kirim laporan'"></span>
+                            </button>
+                        </div>
                     </div>
 
                 </div>
@@ -296,6 +307,12 @@
     function reportCreateComponent() {
         return {
             imagePreview: null,
+            draftImage: null,
+            draftMessage: '',
+            draftSaveTimer: null,
+            draftReady: false,
+            draftTouched: false,
+            submitting: false,
             isDragging: false,
             cameraOpen: false,
             cameraLoading: false,
@@ -315,6 +332,12 @@
             marker: null,
 
             init() {
+                this.$watch('latitude', () => this.queueDraftSave());
+                this.$watch('longitude', () => this.queueDraftSave());
+                this.$watch('addressText', () => this.queueDraftSave());
+                this.$watch('selectedCategory', () => this.queueDraftSave());
+                this.$watch('aiResult', () => this.queueDraftSave());
+
                 // Prevent browser from opening files dropped anywhere on page
                 ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
                     window.addEventListener(eventName, (e) => e.preventDefault(), false);
@@ -322,7 +345,193 @@
 
                 this.$nextTick(() => {
                     this.initMap();
+                    this.restoreDraft();
                 });
+            },
+
+            draftKey() {
+                return 'user-{{ auth()->id() }}';
+            },
+
+            openDraftDatabase() {
+                return new Promise((resolve, reject) => {
+                    if (!window.indexedDB) {
+                        reject(new Error('Browser ini tidak mendukung penyimpanan draf.'));
+                        return;
+                    }
+
+                    const request = indexedDB.open('swms-report-drafts', 1);
+                    request.onupgradeneeded = () => {
+                        if (!request.result.objectStoreNames.contains('drafts')) {
+                            request.result.createObjectStore('drafts', { keyPath: 'key' });
+                        }
+                    };
+                    request.onsuccess = () => resolve(request.result);
+                    request.onerror = () => reject(request.error || new Error('Database draf tidak dapat dibuka.'));
+                });
+            },
+
+            async readDraft() {
+                const db = await this.openDraftDatabase();
+
+                return new Promise((resolve, reject) => {
+                    const transaction = db.transaction('drafts', 'readonly');
+                    const request = transaction.objectStore('drafts').get(this.draftKey());
+                    request.onsuccess = () => resolve(request.result || null);
+                    request.onerror = () => reject(request.error || new Error('Draf tidak dapat dibaca.'));
+                    transaction.oncomplete = () => db.close();
+                    transaction.onerror = () => {
+                        db.close();
+                        reject(transaction.error || new Error('Draf tidak dapat dibaca.'));
+                    };
+                });
+            },
+
+            async writeDraft(draft) {
+                const db = await this.openDraftDatabase();
+
+                return new Promise((resolve, reject) => {
+                    const transaction = db.transaction('drafts', 'readwrite');
+                    transaction.objectStore('drafts').put(draft);
+                    transaction.oncomplete = () => {
+                        db.close();
+                        resolve();
+                    };
+                    transaction.onerror = () => {
+                        db.close();
+                        reject(transaction.error || new Error('Draf tidak dapat disimpan.'));
+                    };
+                    transaction.onabort = () => {
+                        db.close();
+                        reject(transaction.error || new Error('Penyimpanan draf dibatalkan.'));
+                    };
+                });
+            },
+
+            queueDraftSave() {
+                if (!this.draftReady) {
+                    this.draftTouched = true;
+                    return;
+                }
+
+                clearTimeout(this.draftSaveTimer);
+                this.draftSaveTimer = setTimeout(() => this.saveDraft(), 200);
+            },
+
+            async saveDraft() {
+                const form = this.$refs.reportForm;
+                const values = {
+                    title: form.elements.namedItem('title').value,
+                    description: form.elements.namedItem('description').value,
+                    waste_category: this.selectedCategory,
+                    location_address: this.addressText,
+                    latitude: this.latitude,
+                    longitude: this.longitude,
+                    aiResult: this.aiResult,
+                };
+                const hasContent = Boolean(
+                    values.title.trim() ||
+                    values.description.trim() ||
+                    values.waste_category ||
+                    values.location_address.trim() ||
+                    this.draftImage
+                );
+
+                if (!hasContent) {
+                    return true;
+                }
+
+                try {
+                    await this.writeDraft({
+                        key: this.draftKey(),
+                        values,
+                        image: this.draftImage ? {
+                            blob: this.draftImage,
+                            name: this.draftImage.name,
+                            type: this.draftImage.type,
+                            lastModified: this.draftImage.lastModified,
+                        } : null,
+                        savedAt: Date.now(),
+                    });
+                    this.draftMessage = 'Draf tersimpan otomatis di browser ini.';
+                    return true;
+                } catch (error) {
+                    console.error('Gagal menyimpan draf laporan:', error);
+                    this.draftMessage = 'Draf tidak dapat disimpan. Pastikan penyimpanan browser tersedia.';
+                    return false;
+                }
+            },
+
+            async submitReport(event) {
+                event.preventDefault();
+                if (this.submitting) return;
+
+                this.submitting = true;
+                clearTimeout(this.draftSaveTimer);
+                const saved = await this.saveDraft();
+                if (!saved) {
+                    this.submitting = false;
+                    this.draftMessage = 'Laporan belum dikirim karena draf tidak dapat disimpan. Periksa penyimpanan browser lalu coba lagi.';
+                    return;
+                }
+
+                this.$refs.reportForm.submit();
+            },
+
+            async restoreDraft() {
+                try {
+                    const draft = await this.readDraft();
+                    if (!draft) return;
+                    if (this.draftTouched) return;
+
+                    const values = draft.values || {};
+                    ['title', 'description'].forEach((name) => {
+                        const field = this.$refs.reportForm.elements.namedItem(name);
+                        if (field && values[name]) {
+                            field.value = values[name];
+                            field.dispatchEvent(new Event('input', { bubbles: true }));
+                        }
+                    });
+
+                    this.selectedCategory = values.waste_category || '';
+                    this.addressText = values.location_address || '';
+                    this.latitude = Number(values.latitude) || this.latitude;
+                    this.longitude = Number(values.longitude) || this.longitude;
+                    this.aiResult = values.aiResult || this.aiResult;
+
+                    if (this.map && this.marker) {
+                        this.map.setView([this.latitude, this.longitude], 13);
+                        this.marker.setLatLng([this.latitude, this.longitude]);
+                    }
+
+                    if (draft.image && draft.image.blob) {
+                        const file = new File([draft.image.blob], draft.image.name, {
+                            type: draft.image.type,
+                            lastModified: draft.image.lastModified,
+                        });
+                        this.draftImage = file;
+
+                        try {
+                            const dataTransfer = new DataTransfer();
+                            dataTransfer.items.add(file);
+                            this.$refs.fileInput.files = dataTransfer.files;
+                            this.processFile(file, false);
+                        } catch (error) {
+                            console.error('Foto draf tidak dapat dipulihkan ke formulir:', error);
+                            this.draftMessage = 'Draf dipulihkan, tetapi foto perlu dipilih ulang.';
+                        }
+                    }
+
+                    if (!this.draftMessage) {
+                        this.draftMessage = 'Draf sebelumnya dipulihkan dari browser ini.';
+                    }
+                } catch (error) {
+                    console.error('Gagal memulihkan draf laporan:', error);
+                    this.draftMessage = 'Draf sebelumnya tidak dapat dipulihkan dari browser.';
+                } finally {
+                    this.draftReady = true;
+                    this.queueDraftSave();
+                }
             },
 
             initMap() {
@@ -403,14 +612,18 @@
                 this.processFile(file);
             },
 
-            processFile(file) {
+            processFile(file, analyze = true) {
+                this.draftImage = file;
                 const reader = new FileReader();
                 reader.onload = (e) => {
                     this.imagePreview = e.target.result;
                 };
                 reader.readAsDataURL(file);
 
-                this.runAiDetection(file);
+                this.queueDraftSave();
+                if (analyze) {
+                    this.runAiDetection(file);
+                }
             },
 
             async openCamera() {
@@ -505,6 +718,7 @@
                     console.error('AI Error:', err);
                 } finally {
                     this.aiLoading = false;
+                    this.queueDraftSave();
                 }
             }
         };

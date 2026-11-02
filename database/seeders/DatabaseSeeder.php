@@ -25,6 +25,7 @@ class DatabaseSeeder extends Seeder
                 'role' => 'admin',
                 'phone' => '081234567890',
                 'address' => 'Kantor Dinas Lingkungan Hidup, Lantai 2',
+                'email_verified_at' => now(),
             ]
         );
 
@@ -37,6 +38,7 @@ class DatabaseSeeder extends Seeder
                 'role' => 'user',
                 'phone' => '081298765432',
                 'address' => 'Jl. Kebon Jeruk Raya No. 12, Jakarta Barat',
+                'email_verified_at' => now(),
             ]
         );
 
@@ -48,8 +50,15 @@ class DatabaseSeeder extends Seeder
                 'role' => 'user',
                 'phone' => '085612348899',
                 'address' => 'Jl. Dago Asri No. 45, Bandung',
+                'email_verified_at' => now(),
             ]
         );
+
+        foreach ([$admin, $user1, $user2] as $demoUser) {
+            if (!$demoUser->hasVerifiedEmail()) {
+                $demoUser->markEmailAsVerified();
+            }
+        }
 
         // 3. Generate Realistic Sample Images via GD
         $reportsDir = storage_path('app/public/reports');
@@ -209,7 +218,17 @@ class DatabaseSeeder extends Seeder
         ];
 
         foreach ($sampleReports as $repData) {
-            $report = Report::create($repData);
+            $report = Report::firstOrCreate(
+                [
+                    'user_id' => $repData['user_id'],
+                    'title' => $repData['title'],
+                ],
+                $repData
+            );
+
+            if (!$report->wasRecentlyCreated) {
+                continue;
+            }
 
             // Create initial status log
             ReportStatusLog::create([
@@ -257,4 +276,3 @@ class DatabaseSeeder extends Seeder
         }
     }
 }
-

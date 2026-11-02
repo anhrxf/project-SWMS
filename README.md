@@ -89,7 +89,7 @@ graph TD
   - Visualisasi grafik interaktif: Bar Chart tren harian & Doughnut Chart komposisi sampah (Chart.js).
   - Tabel ringkasan laporan terbaru dengan thumbnail dan status badge.
 - **Manajemen Laporan Sampah (CRUD Lengkap)**:
-  - **Create**: Unggah foto sampah, integrasi prediksi AI instan, pemilihan lokasi interaktif via **Leaflet Map** (draggable marker) & tombol **GPS Geolocation**.
+  - **Create**: Unggah foto sampah, integrasi prediksi AI instan, pemilihan lokasi interaktif via **Leaflet Map** (draggable marker) & tombol **GPS Geolocation**. Draf formulir dan foto tersimpan otomatis di browser agar tidak hilang saat halaman di-refresh.
   - **Read**: Tampilan daftar laporan dengan filter multi-kriteria dan paginasi.
   - **Detail**: Informasi menyeluruh, foto resolusi tinggi, marker peta interaktif, rekomendasi daur ulang ramah lingkungan, dan **Riwayat Jejak Audit Transisi Status**.
   - **Update**: Edit rincian laporan dan opsi penggantian foto.
@@ -193,12 +193,43 @@ composer install
 # 2. Generate Application Key
 php artisan key:generate
 
-# 3. Jalankan migrasi dan isi data awal (users, sample reports, foto)
-php artisan migrate:fresh --seed
+# 3. Jalankan migrasi yang belum diterapkan dan isi data awal tanpa menghapus data
+php artisan migrate --seed
 
 # 4. Hubungkan penyimpanan berkas publik
 php artisan storage:link
 ```
+
+`php artisan migrate:fresh` menghapus semua tabel beserta datanya. Gunakan hanya jika
+memang ingin mengatur ulang database lokal; jangan gunakan untuk pembaruan rutin.
+
+### Pengiriman dan verifikasi email
+
+Pendaftaran mengirim tautan verifikasi yang berlaku selama 60 menit. Akun belum dapat
+mengakses dashboard, laporan, atau fitur aplikasi sebelum tautan dibuka. Jika email
+diubah dari halaman profil, alamat baru harus diverifikasi ulang. Verifikasi membuktikan
+bahwa pengguna dapat menerima email tersebut; hal ini tidak memeriksa apakah alamat
+terdaftar sebagai akun Google.
+
+Mailer bawaan `.env.example` menggunakan `MAIL_MAILER=log`, sehingga email tidak
+dikirim keluar dan dapat diperiksa di `storage/logs/laravel.log`. Untuk pengiriman nyata,
+atur SMTP di `.env`, misalnya:
+
+```dotenv
+APP_URL=https://alamat-aplikasi-anda
+MAIL_MAILER=smtp
+MAIL_SCHEME=smtp
+MAIL_HOST=smtp.gmail.com
+MAIL_PORT=587
+MAIL_USERNAME=alamat-gmail-anda
+MAIL_PASSWORD=password-aplikasi-google
+MAIL_FROM_ADDRESS=alamat-gmail-anda
+MAIL_FROM_NAME="Smart Waste Management"
+```
+
+Untuk Gmail, aktifkan verifikasi dua langkah lalu buat **App Password** dan gunakan itu
+sebagai `MAIL_PASSWORD`; jangan gunakan kata sandi akun Google. `APP_URL` harus alamat
+publik aplikasi agar tautan verifikasi yang ditandatangani dapat dibuka penerima.
 
 ### Langkah 3: Menjalankan Server Web Laravel
 ```bash
@@ -325,4 +356,3 @@ project-SWMS/
 
 ---
 *Dikembangkan dengan dedikasi untuk Technical Coding Test – Fullstack Developer Bilcode Technology.*
-

@@ -24,16 +24,19 @@ Route::prefix('v1')->group(function () {
     Route::middleware('auth:sanctum')->group(function () {
         Route::post('/auth/logout', [ApiAuthController::class, 'logout']);
         Route::get('/auth/profile', [ApiAuthController::class, 'profile']);
+        Route::post('/auth/email/verification-notification', [ApiAuthController::class, 'resendVerification'])
+            ->middleware('throttle:6,1');
 
-        // Reports API
-        Route::get('/reports', [ApiReportController::class, 'index']);
-        Route::post('/reports', [ApiReportController::class, 'store']);
-        Route::get('/reports/{report}', [ApiReportController::class, 'show']);
+        Route::middleware('verified')->group(function () {
+            // Reports API
+            Route::get('/reports', [ApiReportController::class, 'index']);
+            Route::post('/reports', [ApiReportController::class, 'store']);
+            Route::get('/reports/{report}', [ApiReportController::class, 'show']);
 
-        // Admin status update via API
-        Route::middleware('admin')->group(function () {
-            Route::post('/reports/{report}/status', [ApiReportController::class, 'updateStatus']);
+            // Admin status update via API
+            Route::middleware('admin')->group(function () {
+                Route::post('/reports/{report}/status', [ApiReportController::class, 'updateStatus']);
+            });
         });
     });
 });
-

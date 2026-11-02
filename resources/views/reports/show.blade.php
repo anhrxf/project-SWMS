@@ -296,6 +296,26 @@
 
 @push('scripts')
 <script>
+    @if(session('clear_report_draft'))
+    const draftRequest = indexedDB.open('swms-report-drafts', 1);
+    draftRequest.onsuccess = () => {
+        const draftDb = draftRequest.result;
+        if (!draftDb.objectStoreNames.contains('drafts')) {
+            draftDb.close();
+            return;
+        }
+
+        const transaction = draftDb.transaction('drafts', 'readwrite');
+        transaction.objectStore('drafts').delete('user-{{ auth()->id() }}');
+        transaction.oncomplete = () => draftDb.close();
+        transaction.onerror = () => {
+            console.error('Draf laporan berhasil dikirim, tetapi salinan lokal tidak dapat dihapus:', transaction.error);
+            draftDb.close();
+        };
+    };
+    draftRequest.onerror = () => console.error('Draf laporan terkirim, tetapi penyimpanan lokal tidak dapat dibuka:', draftRequest.error);
+    @endif
+
     document.addEventListener('DOMContentLoaded', () => {
         const lat = {{ $report->latitude ?: -6.2088 }};
         const lng = {{ $report->longitude ?: 106.8456 }};

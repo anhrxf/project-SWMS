@@ -4,9 +4,13 @@ namespace Tests\Feature;
 
 use App\Models\Report;
 use App\Models\User;
+use Database\Seeders\DatabaseSeeder;
+use App\Notifications\VerifyEmailNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\URL;
 use Tests\TestCase;
 
 class SwmsSystemTest extends TestCase
@@ -52,6 +56,8 @@ class SwmsSystemTest extends TestCase
 
     public function test_new_user_can_register(): void
     {
+        Notification::fake();
+
         $response = $this->post('/register', [
             'name' => 'Warga Baru',
             'email' => 'wargabaru@swms.com',
@@ -61,13 +67,119 @@ class SwmsSystemTest extends TestCase
             'password_confirmation' => 'password123',
         ]);
 
-        $response->assertRedirect('/dashboard');
+        $response->assertRedirect('/email/verify');
         $this->assertDatabaseHas('users', [
             'email' => 'wargabaru@swms.com',
             'phone' => '087799881122',
             'role' => 'user',
+            'email_verified_at' => null,
         ]);
         $this->assertAuthenticated();
+        $this->get('/dashboard')->assertRedirect('/email/verify');
+        $this->get('/email/verify')->assertOk()->assertSee('Verifikasi email Anda');
+        Notification::assertSentTo(
+            User::where('email', 'wargabaru@swms.com')->first(),
+            VerifyEmailNotification::class
+        );
+    }
+
+    public function test_signed_email_verification_activates_web_account(): void
+    {
+        $user = User::factory()->unverified()->create();
+        $verificationUrl = URL::temporarySignedRoute(
+            'verification.verify',
+            now()->addMinutes(30),
+            ['id' => $user->id, 'hash' => sha1($user->getEmailForVerification())]
+        );
+
+        $this->get($verificationUrl)
+            ->assertRedirect('/login')
+            ->assertSessionHas('success', 'Email berhasil diverifikasi. Silakan masuk ke akun Anda.');
+
+        $this->assertTrue($user->fresh()->hasVerifiedEmail());
+        $this->post('/login', [
+            'email' => $user->email,
+            'password' => 'password',
+        ])->assertRedirect('/dashboard');
+    }
+
+    public function test_unverified_api_account_can_resend_verification_but_cannot_access_reports(): void
+    {
+        Notification::fake();
+        $user = User::factory()->unverified()->create();
+        $token = $user->createToken('test-device')->plainTextToken;
+        $headers = ['Authorization' => 'Bearer ' . $token, 'Accept' => 'application/json'];
+
+        $this->withHeaders($headers)->getJson('/api/v1/reports')
+            ->assertForbidden();
+
+        $this->withHeaders($headers)->postJson('/api/v1/auth/email/verification-notification')
+            ->assertStatus(202)
+            ->assertJsonPath('success', true);
+
+        Notification::assertSentTo($user, VerifyEmailNotification::class);
+    }
+
+    public function test_api_registration_returns_verification_link_and_api_account_is_activated_by_link(): void
+    {
+        Notification::fake();
+        $response = $this->postJson('/api/v1/auth/register', [
+            'name' => 'Pendaftar API',
+            'email' => 'api.warga@example.com',
+            'phone' => '087700001122',
+            'password' => 'password123',
+            'password_confirmation' => 'password123',
+        ])->assertCreated()
+            ->assertJsonPath('data.email_verified', false);
+
+        $user = User::where('email', 'api.warga@example.com')->firstOrFail();
+        $verificationUrl = $response->json('data.verification_url');
+
+        $this->assertNotEmpty($verificationUrl);
+        Notification::assertSentTo($user, VerifyEmailNotification::class);
+        $this->get($verificationUrl)->assertRedirect('/login');
+        $this->assertTrue($user->fresh()->hasVerifiedEmail());
+    }
+
+    public function test_changing_email_requires_verification_of_the_new_address(): void
+    {
+        Notification::fake();
+        $user = User::where('email', 'user@swms.com')->firstOrFail();
+
+        $this->actingAs($user)->put('/profile', [
+            'name' => $user->name,
+            'email' => 'new.address@example.com',
+            'phone' => $user->phone,
+            'address' => $user->address,
+        ])->assertRedirect('/email/verify');
+
+        $this->assertDatabaseHas('users', [
+            'id' => $user->id,
+            'email' => 'new.address@example.com',
+            'email_verified_at' => null,
+        ]);
+        Notification::assertSentTo($user->fresh(), VerifyEmailNotification::class);
+    }
+
+    public function test_email_verification_link_rejects_tampered_and_expired_urls(): void
+    {
+        $user = User::factory()->unverified()->create();
+        $validUrl = URL::temporarySignedRoute(
+            'verification.verify',
+            now()->addMinutes(30),
+            ['id' => $user->id, 'hash' => sha1($user->getEmailForVerification())]
+        );
+
+        $this->get(str_replace(sha1($user->email), sha1('other@example.com'), $validUrl))
+            ->assertForbidden();
+        $this->assertFalse($user->fresh()->hasVerifiedEmail());
+
+        $expiredUrl = URL::temporarySignedRoute(
+            'verification.verify',
+            now()->subMinutes(1),
+            ['id' => $user->id, 'hash' => sha1($user->getEmailForVerification())]
+        );
+        $this->get($expiredUrl)->assertForbidden();
     }
 
     public function test_cannot_register_with_duplicate_phone(): void
@@ -130,6 +242,61 @@ class SwmsSystemTest extends TestCase
         $usersResponse->assertStatus(200);
     }
 
+    public function test_api_documentation_lists_authentication_and_registered_endpoints(): void
+    {
+        $user = User::where('email', 'user@swms.com')->first();
+
+        $this->actingAs($user)->get('/api-docs')
+            ->assertOk()
+            ->assertSee('Authorization: Bearer')
+            ->assertSee('/auth/profile')
+            ->assertSee('/auth/logout')
+            ->assertSee('/reports/{report}/status')
+            ->assertSee('Tidak ada urutan transisi yang diwajibkan');
+    }
+
+    public function test_refreshing_reports_page_does_not_change_saved_reports(): void
+    {
+        $user = User::where('email', 'user@swms.com')->first();
+        $report = Report::where('user_id', $user->id)->firstOrFail();
+        $before = [
+            'count' => Report::count(),
+            'title' => $report->title,
+            'status' => $report->status,
+            'admin_notes' => $report->admin_notes,
+        ];
+
+        $this->actingAs($user)->get('/reports')->assertOk();
+        $this->get('/reports')->assertOk();
+
+        $this->assertSame($before['count'], Report::count());
+        $this->assertDatabaseHas('reports', [
+            'id' => $report->id,
+            'title' => $before['title'],
+            'status' => $before['status'],
+            'admin_notes' => $before['admin_notes'],
+        ]);
+    }
+
+    public function test_seeding_again_does_not_duplicate_or_overwrite_reports(): void
+    {
+        $report = Report::where('title', 'Timbunan Botol Plastik dan Gelas Mineral di Dekat Halte')
+            ->firstOrFail();
+        $report->update(['status' => 'pending', 'admin_notes' => 'Catatan yang sudah disimpan.']);
+        $beforeCount = Report::count();
+        $beforeLogCount = $report->statusLogs()->count();
+
+        $this->seed(DatabaseSeeder::class);
+
+        $this->assertSame($beforeCount, Report::count());
+        $this->assertSame($beforeLogCount, $report->fresh()->statusLogs()->count());
+        $this->assertDatabaseHas('reports', [
+            'id' => $report->id,
+            'status' => 'pending',
+            'admin_notes' => 'Catatan yang sudah disimpan.',
+        ]);
+    }
+
     public function test_regular_user_cannot_access_user_management(): void
     {
         $user = User::where('email', 'user@swms.com')->first();
@@ -154,6 +321,7 @@ class SwmsSystemTest extends TestCase
             'longitude' => 106.8166,
             'location_address' => 'Jl. Sudirman, Jakarta',
         ]);
+        $response->assertSessionHas('clear_report_draft', true);
 
         $this->assertDatabaseHas('reports', [
             'title' => 'Botol Plastik di Selokan',

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules\Password;
 
@@ -39,6 +40,7 @@ class ApiAuthController extends Controller
         ]);
 
         $token = $user->createToken('swms_mobile_token')->plainTextToken;
+        $user->sendEmailVerificationNotification();
 
         return response()->json([
             'success' => true,
@@ -54,6 +56,12 @@ class ApiAuthController extends Controller
                 ],
                 'token' => $token,
                 'token_type' => 'Bearer',
+                'email_verified' => false,
+                'verification_url' => URL::temporarySignedRoute(
+                    'verification.verify',
+                    now()->addMinutes(config('auth.verification.expire', 60)),
+                    ['id' => $user->id, 'hash' => sha1($user->getEmailForVerification())]
+                ),
             ],
         ], 201);
     }
@@ -80,7 +88,9 @@ class ApiAuthController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Login berhasil.',
+            'message' => $user->hasVerifiedEmail()
+                ? 'Login berhasil.'
+                : 'Login berhasil, tetapi verifikasi email diperlukan sebelum menggunakan laporan.',
             'data' => [
                 'user' => [
                     'id' => $user->id,
@@ -92,6 +102,7 @@ class ApiAuthController extends Controller
                 ],
                 'token' => $token,
                 'token_type' => 'Bearer',
+                'email_verified' => $user->hasVerifiedEmail(),
             ],
         ]);
     }
@@ -106,6 +117,25 @@ class ApiAuthController extends Controller
         ]);
     }
 
+    public function resendVerification(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        if ($user->hasVerifiedEmail()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Alamat email sudah diverifikasi.',
+            ]);
+        }
+
+        $user->sendEmailVerificationNotification();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Tautan verifikasi baru telah dikirim ke alamat email Anda.',
+        ], 202);
+    }
+
     public function profile(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -118,6 +148,8 @@ class ApiAuthController extends Controller
                 'role' => $user->role,
                 'phone' => $user->phone,
                 'address' => $user->address,
+                'email_verified' => $user->hasVerifiedEmail(),
+                'email_verified_at' => $user->email_verified_at,
                 'created_at' => $user->created_at,
             ],
         ]);

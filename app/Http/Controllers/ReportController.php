@@ -157,7 +157,8 @@ class ReportController extends Controller
         ]);
 
         return redirect()->route('reports.show', $report)
-            ->with('success', 'Laporan sampah berhasil dikirim! Tim operasional akan segera menindaklanjuti.');
+            ->with('success', 'Laporan sampah berhasil dikirim! Tim operasional akan segera menindaklanjuti.')
+            ->with('clear_report_draft', true);
     }
 
     public function show(Report $report): View
