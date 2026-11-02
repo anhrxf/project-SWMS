@@ -1,272 +1,378 @@
-"""
-SWMS Machine Learning - Waste Image Classification Model
-Trains a Multi-Class Classification Model on 3 Waste Categories:
-1. Organic Waste
-2. Plastic Waste
-3. Paper Waste
+"""Train and evaluate a PyTorch waste-image classifier."""
 
-Evaluates:
-- Testing Accuracy (Target >= 80%)
-- Confusion Matrix (saved as confusion_matrix.png)
-- Classification Report (Precision, Recall, F1-Score)
-"""
+from __future__ import annotations
 
-import os
+import argparse
+import csv
+import hashlib
 import json
-import pickle
-import numpy as np
-from PIL import Image
+import os
+import random
+from copy import deepcopy
+from pathlib import Path
+from typing import Any
+
+import matplotlib
+
+matplotlib.use("Agg")
+
 import matplotlib.pyplot as plt
-from classifier import SoftmaxClassifier
+import numpy as np
+import torch
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+from sklearn.model_selection import train_test_split
+from torch import nn
+from torch.utils.data import DataLoader, Subset
+from torchvision.datasets import ImageFolder
 
-CLASS_NAMES = ['organic', 'plastic', 'paper']
-CLASS_LABELS = {
-    'organic': 'Organic Waste (Organik)',
-    'plastic': 'Plastic Waste (Plastik)',
-    'paper': 'Paper Waste (Kertas)'
-}
+from classifier import (
+    build_model,
+    evaluation_transform,
+    training_transform,
+)
 
-DATASET_DIR = os.path.join(os.path.dirname(__file__), 'dataset')
-OUTPUT_DIR = os.path.dirname(__file__)
+ROOT = Path(__file__).resolve().parent
+DEFAULT_DATA_DIR = ROOT / "training_photos"
+DEFAULT_OUTPUT_DIR = ROOT / "artifacts"
+EXPECTED_CLASSES = {"organic", "paper", "plastic"}
+TARGET_ACCURACY = 0.80
+RANDOM_SEED = 42
 
-def extract_features(img_path: str) -> np.ndarray:
-    """Extract 36 visual features (RGB histograms, HSV moments, color ratios)."""
-    img = Image.open(img_path).convert('RGB').resize((128, 128))
-    arr = np.array(img, dtype=np.float32) / 255.0
 
-    r = arr[:, :, 0]
-    g = arr[:, :, 1]
-    b = arr[:, :, 2]
+def _set_seed(seed: int) -> None:
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
-    # 1. RGB channel statistics (6 features)
-    features = [
-        np.mean(r), np.std(r),
-        np.mean(g), np.std(g),
-        np.mean(b), np.std(b),
-    ]
 
-    # 2. Histograms (6 bins per channel = 18 features)
-    for channel in [r, g, b]:
-        hist, _ = np.histogram(channel, bins=6, range=(0.0, 1.0), density=True)
-        features.extend(hist)
+def _unique_sample_indices(dataset: ImageFolder) -> list[int]:
+    hashes: dict[str, int] = {}
+    unique_indices = []
+    for index, (path, label) in enumerate(dataset.samples):
+        digest = hashlib.sha256(Path(path).read_bytes()).hexdigest()
+        if digest in hashes:
+            if dataset.samples[hashes[digest]][1] != label:
+                raise ValueError(f"Duplicate image has conflicting labels: {path}")
+            continue
+        hashes[digest] = index
+        unique_indices.append(index)
+    return unique_indices
 
-    # 3. HSV / Color ratios (12 features)
-    max_c = np.maximum(np.maximum(r, g), b)
-    min_c = np.minimum(np.minimum(r, g), b)
-    diff = max_c - min_c
-    sat = np.where(max_c > 0, diff / (max_c + 1e-6), 0)
-    brightness = 0.299 * r + 0.587 * g + 0.114 * b
 
-    features.append(float(np.mean(sat)))
-    features.append(float(np.std(sat)))
-    features.append(float(np.mean(brightness)))
+def _stratified_split(
+    indices: list[int], labels: list[int]
+) -> tuple[list[int], list[int], list[int]]:
+    selected_labels = [labels[index] for index in indices]
+    train_validation, test_indices = train_test_split(
+        indices,
+        test_size=0.15,
+        random_state=RANDOM_SEED,
+        stratify=selected_labels,
+    )
+    train_labels = [labels[index] for index in train_validation]
+    train_indices, validation_indices = train_test_split(
+        train_validation,
+        test_size=0.1765,
+        random_state=RANDOM_SEED,
+        stratify=train_labels,
+    )
+    return train_indices, validation_indices, test_indices
 
-    # Organic indicators (green & brown dominant)
-    green_mask = (g > r + 0.05) & (g > b + 0.05)
-    brown_mask = (r > 0.3) & (g > 0.15) & (b < 0.25) & (r > b + 0.1)
-    features.append(float(np.mean(green_mask)))
-    features.append(float(np.mean(brown_mask)))
 
-    # Plastic indicators (blue dominant, vivid colors, high reflectivity)
-    blue_mask = (b > r + 0.05) & (b > g + 0.03)
-    vivid_mask = sat > 0.55
-    features.append(float(np.mean(blue_mask)))
-    features.append(float(np.mean(vivid_mask)))
+def _run_epoch(
+    model: nn.Module,
+    loader: DataLoader[Any],
+    criterion: nn.Module,
+    device: torch.device,
+    optimizer: torch.optim.Optimizer | None = None,
+) -> tuple[float, float]:
+    training = optimizer is not None
+    model.train(training)
+    total_loss = 0.0
+    total_correct = 0
+    total_samples = 0
 
-    # Paper indicators (beige/tan, low saturation, uniform)
-    tan_mask = (r > 0.6) & (g > 0.5) & (b > 0.35) & (sat < 0.35)
-    low_sat_mask = sat < 0.2
-    features.append(float(np.mean(tan_mask)))
-    features.append(float(np.mean(low_sat_mask)))
+    for images, labels in loader:
+        images = images.to(device)
+        labels = labels.to(device)
+        if training:
+            optimizer.zero_grad(set_to_none=True)
 
-    # Edge / Gradient variation
-    dx = np.diff(arr, axis=1)
-    dy = np.diff(arr, axis=0)
-    edge_energy = float(np.mean(np.abs(dx)) + np.mean(np.abs(dy)))
-    features.append(edge_energy)
+        with torch.set_grad_enabled(training):
+            logits = model(images)
+            loss = criterion(logits, labels)
+            if training:
+                loss.backward()
+                optimizer.step()
 
-    return np.array(features, dtype=np.float32)
+        batch_size = labels.size(0)
+        total_loss += loss.item() * batch_size
+        total_correct += (logits.argmax(dim=1) == labels).sum().item()
+        total_samples += batch_size
 
-def main():
-    print("=" * 65)
-    print("  SWMS Waste Image Classification - Model Training Pipeline")
-    print("=" * 65)
+    if total_samples == 0:
+        raise ValueError("A training or validation split is empty.")
+    return total_loss / total_samples, total_correct / total_samples
 
-    X_list = []
-    y_list = []
 
-    print("\n[1/5] Loading images and extracting visual features...")
-    for class_idx, class_name in enumerate(CLASS_NAMES):
-        class_folder = os.path.join(DATASET_DIR, class_name)
-        if not os.path.exists(class_folder):
-            raise FileNotFoundError(f"Folder not found: {class_folder}. Run generate_dataset.py first.")
+def _predict(
+    model: nn.Module, loader: DataLoader[Any], device: torch.device
+) -> tuple[list[int], list[int]]:
+    model.eval()
+    expected: list[int] = []
+    predicted: list[int] = []
+    with torch.inference_mode():
+        for images, labels in loader:
+            logits = model(images.to(device))
+            expected.extend(labels.tolist())
+            predicted.extend(logits.argmax(dim=1).cpu().tolist())
+    return expected, predicted
 
-        files = [f for f in os.listdir(class_folder) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
-        print(f"  - Loading {len(files)} images from class '{class_name}' ({CLASS_LABELS[class_name]})...")
 
-        for fname in sorted(files):
-            fpath = os.path.join(class_folder, fname)
-            features = extract_features(fpath)
-            X_list.append(features)
-            y_list.append(class_idx)
+def _write_json(path: Path, contents: Any) -> None:
+    path.write_text(
+        json.dumps(contents, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
 
-    X = np.array(X_list)
-    y = np.array(y_list)
-    print(f"\nTotal Dataset: {X.shape[0]} samples with {X.shape[1]} features each.")
 
-    # [2/5] Train-Test Split (80% Train, 20% Test with Stratified Sampling)
-    np.random.seed(42)
-    test_indices = []
-    train_indices = []
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
+    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument("--epochs", type=int, default=25)
+    parser.add_argument("--batch-size", type=int, default=16)
+    parser.add_argument("--patience", type=int, default=6)
+    args = parser.parse_args()
+    if args.epochs < 1 or args.batch_size < 1 or args.patience < 1:
+        parser.error("epochs, batch-size, and patience must be positive.")
+    if not args.data_dir.is_dir():
+        raise FileNotFoundError(f"Training image directory not found: {args.data_dir}")
 
-    for c in range(len(CLASS_NAMES)):
-        c_indices = np.where(y == c)[0]
-        np.random.shuffle(c_indices)
-        num_test = int(len(c_indices) * 0.20)
-        test_indices.extend(c_indices[:num_test])
-        train_indices.extend(c_indices[num_test:])
+    _set_seed(RANDOM_SEED)
+    torch.set_num_threads(max(1, min(4, os.cpu_count() or 1)))
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    train_indices = np.array(train_indices)
-    test_indices = np.array(test_indices)
+    train_dataset = ImageFolder(args.data_dir, transform=training_transform())
+    evaluation_dataset = ImageFolder(
+        args.data_dir, transform=evaluation_transform()
+    )
+    classes = train_dataset.classes
+    if set(classes) != EXPECTED_CLASSES:
+        raise ValueError(
+            f"Expected exactly {sorted(EXPECTED_CLASSES)}, found {classes}."
+        )
 
-    X_train, y_train = X[train_indices], y[train_indices]
-    X_test, y_test = X[test_indices], y[test_indices]
-
-    print(f"[2/5] Train samples: {len(X_train)} | Test samples: {len(X_test)}")
-
-    # [3/5] Train Model
-    print("[3/5] Training Softmax Neural Classifier...")
-    model = SoftmaxClassifier(lr=0.08, epochs=750, reg=0.005)
-    model.fit(X_train, y_train)
-
-    # Save model
-    model_path = os.path.join(OUTPUT_DIR, 'model.pkl')
-    with open(model_path, 'wb') as f:
-        pickle.dump(model, f)
-    print(f"  [+] Model successfully saved to {model_path}")
-
-    # [4/5] Evaluation
-    print("\n[4/5] Evaluating Model on Testing Data...")
-    y_pred_train = model.predict(X_train)
-    y_pred_test = model.predict(X_test)
-
-    train_acc = float(np.mean(y_pred_train == y_train) * 100)
-    test_acc = float(np.mean(y_pred_test == y_test) * 100)
-
-    print(f"  Training Accuracy : {train_acc:.2f}%")
-    print(f"  Testing Accuracy  : {test_acc:.2f}% (Target: >= 80.0%)")
-
-    # Confusion Matrix
-    num_classes = len(CLASS_NAMES)
-    cm = np.zeros((num_classes, num_classes), dtype=int)
-    for true_label, pred_label in zip(y_test, y_pred_test):
-        cm[true_label, pred_label] += 1
-
-    print("\nConfusion Matrix:")
-    print("               Pred Organic  Pred Plastic  Pred Paper")
-    for i, name in enumerate(CLASS_NAMES):
-        print(f"True {name.capitalize():<8}:     {cm[i, 0]:>6}        {cm[i, 1]:>6}      {cm[i, 2]:>6}")
-
-    # Classification Report
-    print("\nClassification Report:")
-    print("-" * 65)
-    print(f"{'Class':<16} {'Precision':<12} {'Recall':<12} {'F1-Score':<12} {'Support':<8}")
-    print("-" * 65)
-
-    report_dict = {}
-    precisions = []
-    recalls = []
-    f1s = []
-
-    for i, name in enumerate(CLASS_NAMES):
-        tp = cm[i, i]
-        fp = np.sum(cm[:, i]) - tp
-        fn = np.sum(cm[i, :]) - tp
-        support = int(np.sum(cm[i, :]))
-
-        prec = tp / (tp + fp) if (tp + fp) > 0 else 0.0
-        rec = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-        f1 = (2 * prec * rec) / (prec + rec) if (prec + rec) > 0 else 0.0
-
-        precisions.append(prec)
-        recalls.append(rec)
-        f1s.append(f1)
-
-        report_dict[name] = {
-            'precision': round(prec * 100, 2),
-            'recall': round(rec * 100, 2),
-            'f1-score': round(f1 * 100, 2),
-            'support': support
-        }
-        print(f"{name.capitalize():<16} {prec*100:>8.2f}%    {rec*100:>8.2f}%    {f1*100:>8.2f}%    {support:>6}")
-
-    macro_prec = float(np.mean(precisions) * 100)
-    macro_rec = float(np.mean(recalls) * 100)
-    macro_f1 = float(np.mean(f1s) * 100)
-    total_support = int(len(y_test))
-
-    print("-" * 65)
-    print(f"{'Macro Avg':<16} {macro_prec:>8.2f}%    {macro_rec:>8.2f}%    {macro_f1:>8.2f}%    {total_support:>6}")
-    print(f"{'Overall Accuracy':<16} {'':<12} {'':<12} {test_acc:>8.2f}%    {total_support:>6}")
-    print("-" * 65)
-
-    # Save Classification Report JSON
-    report_dict['overall_accuracy'] = round(test_acc, 2)
-    report_dict['macro_avg'] = {
-        'precision': round(macro_prec, 2),
-        'recall': round(macro_rec, 2),
-        'f1-score': round(macro_f1, 2)
+    unique_indices = _unique_sample_indices(train_dataset)
+    labels = train_dataset.targets
+    counts = {
+        category: sum(labels[index] == label for index in unique_indices)
+        for label, category in enumerate(classes)
     }
-    with open(os.path.join(OUTPUT_DIR, 'classification_report.json'), 'w') as f:
-        json.dump(report_dict, f, indent=2)
+    if min(counts.values()) < 10:
+        raise ValueError(
+            f"Each class needs at least 10 unique images for stratified evaluation: {counts}"
+        )
+    if len(unique_indices) < 150:
+        raise ValueError(
+            f"At least 150 unique photos are required; found {len(unique_indices)}."
+        )
 
-    # Save text report
-    with open(os.path.join(OUTPUT_DIR, 'evaluation_results.txt'), 'w') as f:
-        f.write("SWMS WASTE CLASSIFICATION MODEL EVALUATION\n")
-        f.write(f"Testing Accuracy: {test_acc:.2f}%\n")
-        f.write(f"Training Accuracy: {train_acc:.2f}%\n\n")
-        f.write("Confusion Matrix:\n")
-        f.write(str(cm) + "\n\n")
-        f.write("Per-Class Metrics:\n")
-        for k, v in report_dict.items():
-            f.write(f"{k}: {v}\n")
+    train_indices, validation_indices, test_indices = _stratified_split(
+        unique_indices, labels
+    )
+    generator = torch.Generator().manual_seed(RANDOM_SEED)
+    train_loader = DataLoader(
+        Subset(train_dataset, train_indices),
+        batch_size=args.batch_size,
+        shuffle=True,
+        num_workers=0,
+        generator=generator,
+    )
+    validation_loader = DataLoader(
+        Subset(evaluation_dataset, validation_indices),
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=0,
+    )
+    test_loader = DataLoader(
+        Subset(evaluation_dataset, test_indices),
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=0,
+    )
 
-    # [5/5] Plot Confusion Matrix Heatmap
-    print("\n[5/5] Generating Confusion Matrix Heatmap...")
-    plt.figure(figsize=(7, 6))
-    plt.imshow(cm, interpolation='nearest', cmap=plt.cm.Blues)
-    plt.title(f'SWMS Waste Classification - Confusion Matrix\nAccuracy: {test_acc:.1f}%', fontsize=12, pad=15)
-    plt.colorbar()
+    print(f"Classes: {classes}")
+    print(f"Unique image counts: {counts}")
+    print(
+        f"Split sizes: train={len(train_indices)}, "
+        f"validation={len(validation_indices)}, test={len(test_indices)}"
+    )
+    print(f"Training device: {device}")
 
-    tick_marks = np.arange(len(CLASS_NAMES))
-    labels = ['Organic', 'Plastic', 'Paper']
-    plt.xticks(tick_marks, labels, fontsize=10)
-    plt.yticks(tick_marks, labels, fontsize=10)
+    model = build_model(len(classes), pretrained=True).to(device)
+    criterion = nn.CrossEntropyLoss()
+    optimizer = torch.optim.AdamW(
+        (parameter for parameter in model.parameters() if parameter.requires_grad),
+        lr=1e-3,
+        weight_decay=1e-4,
+    )
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode="min", factor=0.5, patience=2, min_lr=1e-6
+    )
 
-    # Label values in each cell
-    thresh = cm.max() / 2.0
-    for i in range(cm.shape[0]):
-        for j in range(cm.shape[1]):
-            val = cm[i, j]
-            color = "white" if val > thresh else "black"
-            plt.text(j, i, f"{val}\n({(val/np.sum(cm[i, :]))*100:.0f}%)",
-                     horizontalalignment="center",
-                     verticalalignment="center",
-                     color=color, fontsize=11, fontweight='bold')
+    best_loss = float("inf")
+    best_state: dict[str, torch.Tensor] | None = None
+    best_epoch = 0
+    epochs_without_improvement = 0
+    history: list[dict[str, float | int]] = []
 
-    plt.ylabel('Actual Category (True Label)', fontsize=11)
-    plt.xlabel('Predicted Category (Model Output)', fontsize=11)
-    plt.tight_layout()
+    for epoch in range(1, args.epochs + 1):
+        train_loss, train_accuracy = _run_epoch(
+            model, train_loader, criterion, device, optimizer
+        )
+        validation_loss, validation_accuracy = _run_epoch(
+            model, validation_loader, criterion, device
+        )
+        scheduler.step(validation_loss)
+        history.append(
+            {
+                "epoch": epoch,
+                "train_loss": train_loss,
+                "train_accuracy": train_accuracy,
+                "validation_loss": validation_loss,
+                "validation_accuracy": validation_accuracy,
+            }
+        )
+        print(
+            f"Epoch {epoch:02d}/{args.epochs}: "
+            f"train_loss={train_loss:.4f}, train_accuracy={train_accuracy:.3f}, "
+            f"val_loss={validation_loss:.4f}, val_accuracy={validation_accuracy:.3f}"
+        )
 
-    cm_path = os.path.join(OUTPUT_DIR, 'confusion_matrix.png')
-    plt.savefig(cm_path, dpi=200)
-    plt.close()
-    print(f"  [+] Confusion matrix heatmap saved to {cm_path}")
+        if validation_loss < best_loss:
+            best_loss = validation_loss
+            best_epoch = epoch
+            best_state = {
+                name: value.detach().cpu().clone()
+                for name, value in model.state_dict().items()
+            }
+            epochs_without_improvement = 0
+        else:
+            epochs_without_improvement += 1
+            if epochs_without_improvement >= args.patience:
+                print("Early stopping: validation loss did not improve.")
+                break
 
-    print("\n" + "=" * 65)
-    print("  ALL TRAINING & EVALUATION TASKS COMPLETED SUCCESSFULLY!")
-    print(f"  Accuracy Target Check: {test_acc:.2f}% >= 80.0% -> PASSED! [OK]")
-    print("=" * 65)
+    if best_state is None:
+        raise RuntimeError("Training completed without a valid model checkpoint.")
 
-if __name__ == '__main__':
+    model.load_state_dict(best_state)
+    model.to(device)
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint_path = args.output_dir / "model.pt"
+    torch.save(
+        {
+            "architecture": "mobilenet_v3_small",
+            "classes": classes,
+            "state_dict": best_state,
+            "image_size": 224,
+            "normalization_mean": [0.485, 0.456, 0.406],
+            "normalization_std": [0.229, 0.224, 0.225],
+            "seed": RANDOM_SEED,
+        },
+        checkpoint_path,
+    )
+
+    expected, predicted = _predict(model, test_loader, device)
+    accuracy = float(accuracy_score(expected, predicted))
+    report = classification_report(
+        expected,
+        predicted,
+        labels=list(range(len(classes))),
+        target_names=classes,
+        output_dict=True,
+        zero_division=0,
+    )
+    matrix = confusion_matrix(
+        expected, predicted, labels=list(range(len(classes)))
+    )
+    evaluation = {
+        "source_dataset": "NeoAivara/Waste_Classification_data",
+        "source_revision": "d58fa9b9187dfd63b726f6f955e2414c0c7fda4d",
+        "source_license": "Apache-2.0",
+        "classes": classes,
+        "unique_images_per_class": counts,
+        "split_sizes": {
+            "train": len(train_indices),
+            "validation": len(validation_indices),
+            "test": len(test_indices),
+        },
+        "random_seed": RANDOM_SEED,
+        "best_epoch": best_epoch,
+        "target_accuracy": TARGET_ACCURACY,
+        "target_accuracy_met": accuracy >= TARGET_ACCURACY,
+        "test_accuracy": accuracy,
+        "classification_report": report,
+        "confusion_matrix": matrix.tolist(),
+    }
+    _write_json(args.output_dir / "evaluation.json", evaluation)
+    _write_json(args.output_dir / "training_history.json", history)
+
+    split_rows = []
+    for index, actual, prediction in zip(test_indices, expected, predicted):
+        split_rows.append(
+            {
+                "image": Path(train_dataset.samples[index][0])
+                .relative_to(args.data_dir)
+                .as_posix(),
+                "actual": classes[actual],
+                "predicted": classes[prediction],
+            }
+        )
+    with (args.output_dir / "test_predictions.csv").open(
+        "w", encoding="utf-8", newline=""
+    ) as file:
+        writer = csv.DictWriter(file, fieldnames=("image", "actual", "predicted"))
+        writer.writeheader()
+        writer.writerows(split_rows)
+
+    figure, axis = plt.subplots(figsize=(6, 5))
+    axis.imshow(matrix, interpolation="nearest", cmap="Greens")
+    axis.set(
+        xticks=np.arange(len(classes)),
+        yticks=np.arange(len(classes)),
+        xticklabels=classes,
+        yticklabels=classes,
+        xlabel="Predicted label",
+        ylabel="True label",
+        title=f"Test confusion matrix ({accuracy:.1%} accuracy)",
+    )
+    plt.setp(axis.get_xticklabels(), rotation=25, ha="right", rotation_mode="anchor")
+    threshold = matrix.max() / 2 if matrix.size else 0
+    for row in range(matrix.shape[0]):
+        for column in range(matrix.shape[1]):
+            axis.text(
+                column,
+                row,
+                str(matrix[row, column]),
+                ha="center",
+                va="center",
+                color="white" if matrix[row, column] > threshold else "black",
+            )
+    figure.tight_layout()
+    figure.savefig(args.output_dir / "confusion_matrix.png", dpi=180)
+    plt.close(figure)
+
+    print(f"Best epoch: {best_epoch}")
+    print(f"Test accuracy: {accuracy:.2%}")
+    print(f"80% target met: {'yes' if accuracy >= TARGET_ACCURACY else 'no'}")
+    print(f"Model and evaluation artifacts saved to {args.output_dir}")
+
+
+if __name__ == "__main__":
     main()

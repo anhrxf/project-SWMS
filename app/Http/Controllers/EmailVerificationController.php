@@ -11,13 +11,17 @@ use Illuminate\View\View;
 
 class EmailVerificationController extends Controller
 {
-    public function notice(): View|RedirectResponse
+    public function notice(Request $request): View|RedirectResponse
     {
         if (Auth::user()->hasVerifiedEmail()) {
             return redirect()->route('dashboard');
         }
 
-        return view('auth.verify-email');
+        $expiresAt = $request->session()->get('email_verification_expires_at');
+
+        return view('auth.verify-email', [
+            'expiresAt' => is_numeric($expiresAt) ? (int) $expiresAt : null,
+        ]);
     }
 
     public function verify(Request $request, int $id, string $hash): RedirectResponse
@@ -31,6 +35,8 @@ class EmailVerificationController extends Controller
         if ($user->markEmailAsVerified()) {
             event(new Verified($user));
         }
+
+        $request->session()->forget('email_verification_expires_at');
 
         if (Auth::check() && Auth::id() === $user->id) {
             return redirect()->route('dashboard')
@@ -49,9 +55,16 @@ class EmailVerificationController extends Controller
             return redirect()->route('dashboard');
         }
 
-        $user->sendEmailVerificationNotification();
+        $expiresAt = now()->addMinutes(config('auth.verification.expire', 5));
+        $user->sendVerificationNotificationUntil($expiresAt);
+        $request->session()->put('email_verification_expires_at', $expiresAt->timestamp);
 
-        return back()->with('info', 'Tautan verifikasi baru telah dikirim ke alamat email Anda.');
+        return back()->with(
+            'info',
+            config('mail.default') === 'log'
+                ? 'Mailer log tidak mengirim email ke inbox. Atur SMTP Gmail di .env untuk pengiriman nyata.'
+                : 'Tautan verifikasi baru telah dikirim ke alamat email Anda.'
+        );
     }
 
 }

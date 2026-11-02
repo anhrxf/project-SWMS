@@ -30,7 +30,7 @@
                 <code class="text-xs font-bold text-slate-800 font-mono">/auth/register</code>
                 <span class="ml-auto text-[11px] text-slate-400 font-medium">Publik</span>
             </div>
-            <p class="text-xs text-slate-600">Membuat akun warga. Email harus valid dan unik; nomor HP wajib, unik, dan 9–20 karakter; alamat opsional. Mengirim tautan verifikasi ke email. Respons HTTP 201 menyertakan token, <code>email_verified: false</code>, dan <code>verification_url</code>. Buka tautan verifikasi sebelum menggunakan endpoint laporan.</p>
+            <p class="text-xs text-slate-600">Membuat akun warga. Email harus valid dan unik; nomor HP wajib, unik, dan 9–20 karakter; alamat opsional. Mengirim tautan verifikasi ke email. Respons HTTP 201 menyertakan token, <code>email_verified: false</code>, <code>verification_url</code>, dan <code>verification_expires_at</code>. Tautan kedaluwarsa setelah 5 menit. Buka tautan verifikasi sebelum menggunakan endpoint laporan.</p>
             <div class="bg-slate-900 text-slate-200 rounded-xl p-3 text-[11px] font-mono overflow-x-auto">
 <pre>{
   "name": "Budi Santoso",
@@ -105,13 +105,13 @@
                 <code class="text-xs font-bold text-slate-800 font-mono">/ai/classify</code>
                 <span class="ml-auto text-[11px] text-amber-600 font-bold"><i class="fa-solid fa-wand-magic-sparkles"></i> Publik</span>
             </div>
-            <p class="text-xs text-slate-600">Kirim field <code class="bg-slate-100 px-1 rounded">image</code> wajib melalui multipart/form-data (JPEG, PNG, atau WEBP; maks. 10 MB). Respons berisi kategori, confidence, label, breakdown, dan rekomendasi; tidak memerlukan token.</p>
+            <p class="text-xs text-slate-600">Kirim field <code class="bg-slate-100 px-1 rounded">image</code> wajib melalui multipart/form-data (JPEG, PNG, JPG, atau WEBP; maks. 10 MB). Kategori berasal dari model PyTorch melalui FastAPI. Respons berisi confidence, label, breakdown, dan rekomendasi; tidak memerlukan token. Jika AI tidak tersedia, respons HTTP 503.</p>
             <div class="bg-slate-900 text-slate-200 rounded-xl p-3 text-[11px] font-mono overflow-x-auto">
 <pre>{
   "success": true,
   "message": "Analisis gambar berhasil dilakukan.",
   "data": {
-    "source": "builtin_smart_classifier",
+    "source": "pytorch_fastapi",
     "category": "plastic",
     "confidence": 93.8,
     "label": "Sampah Plastik (Plastic Waste)",
@@ -142,7 +142,7 @@
                 <code class="text-xs font-bold text-slate-800 font-mono">/reports</code>
                 <span class="ml-auto text-[11px] text-purple-600 font-bold"><i class="fa-solid fa-lock"></i> Warga · Auth Sanctum</span>
             </div>
-            <p class="text-xs text-slate-600">Buat laporan dengan multipart/form-data. Wajib: <code>title</code> (string, maks. 255), <code>description</code>, <code>waste_category</code> (organic, plastic, paper, other), dan <code>image</code> (JPEG, PNG, WEBP; maks. 10 MB). Opsional: <code>latitude</code> (-90 hingga 90), <code>longitude</code> (-180 hingga 180), <code>location_address</code> (maks. 500), <code>ai_detected_category</code>, <code>ai_confidence</code>. Admin menerima HTTP 403. Sukses mengembalikan HTTP 201.</p>
+            <p class="text-xs text-slate-600">Buat laporan dengan multipart/form-data. Wajib: <code>title</code> (string, maks. 255), <code>description</code>, <code>waste_category</code> (organic, plastic, paper, other), dan <code>image</code> (JPEG, PNG, JPG, atau WEBP; maks. 10 MB). Opsional: <code>latitude</code> (-90 hingga 90), <code>longitude</code> (-180 hingga 180), <code>location_address</code> (maks. 500). Kategori dan confidence AI dihitung ulang server dari gambar, bukan dari nilai yang dikirim klien. Admin menerima HTTP 403. Sukses mengembalikan HTTP 201; layanan AI tidak tersedia menghasilkan HTTP 503 dan laporan tidak disimpan.</p>
         </div>
 
         <div class="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs space-y-3">

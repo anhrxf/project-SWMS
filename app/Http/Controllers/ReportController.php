@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Report;
 use App\Models\ReportStatusLog;
+use App\Services\WasteClassificationException;
 use App\Services\WasteClassifierService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -108,8 +109,6 @@ class ReportController extends Controller
             'latitude' => ['nullable', 'numeric', 'between:-90,90'],
             'longitude' => ['nullable', 'numeric', 'between:-180,180'],
             'location_address' => ['nullable', 'string', 'max:500'],
-            'ai_detected_category' => ['nullable', 'string'],
-            'ai_confidence' => ['nullable', 'numeric', 'between:0,100'],
         ], [
             'title.required' => 'Judul laporan wajib diisi.',
             'description.required' => 'Deskripsi sampah wajib diisi.',
@@ -119,18 +118,17 @@ class ReportController extends Controller
             'image.max' => 'Ukuran gambar maksimal 10MB.',
         ]);
 
-        // Upload image
         $imagePath = $request->file('image')->store('reports', 'public');
-        $fullPath = storage_path('app/public/' . $imagePath);
+        $fullPath = Storage::disk('public')->path($imagePath);
 
-        // Run AI classification if not already supplied from frontend preview
-        $aiDetected = $validated['ai_detected_category'] ?? null;
-        $aiConfidence = $validated['ai_confidence'] ?? null;
-
-        if (!$aiDetected || !$aiConfidence) {
+        try {
             $analysis = $this->classifier->classify($fullPath);
-            $aiDetected = $analysis['category'];
-            $aiConfidence = $analysis['confidence'];
+        } catch (WasteClassificationException $exception) {
+            Storage::disk('public')->delete($imagePath);
+
+            return back()
+                ->withInput()
+                ->withErrors(['image' => $exception->getMessage()]);
         }
 
         $report = Report::create([
@@ -138,8 +136,8 @@ class ReportController extends Controller
             'title' => $validated['title'],
             'description' => $validated['description'],
             'waste_category' => $validated['waste_category'],
-            'ai_detected_category' => $aiDetected,
-            'ai_confidence' => $aiConfidence,
+            'ai_detected_category' => $analysis['category'],
+            'ai_confidence' => $analysis['confidence'],
             'image_path' => $imagePath,
             'latitude' => $validated['latitude'] ?? null,
             'longitude' => $validated['longitude'] ?? null,
@@ -217,19 +215,33 @@ class ReportController extends Controller
         ];
 
         if ($request->hasFile('image')) {
-            if ($report->image_path && Storage::disk('public')->exists($report->image_path)) {
-                Storage::disk('public')->delete($report->image_path);
-            }
             $imagePath = $request->file('image')->store('reports', 'public');
-            $fullPath = storage_path('app/public/' . $imagePath);
-            $analysis = $this->classifier->classify($fullPath);
+            $fullPath = Storage::disk('public')->path($imagePath);
+            try {
+                $analysis = $this->classifier->classify($fullPath);
+            } catch (WasteClassificationException $exception) {
+                Storage::disk('public')->delete($imagePath);
+
+                return back()
+                    ->withInput()
+                    ->withErrors(['image' => $exception->getMessage()]);
+            }
 
             $updateData['image_path'] = $imagePath;
             $updateData['ai_detected_category'] = $analysis['category'];
             $updateData['ai_confidence'] = $analysis['confidence'];
         }
 
+        $previousImagePath = $report->image_path;
         $report->update($updateData);
+
+        if (
+            isset($imagePath)
+            && $previousImagePath
+            && Storage::disk('public')->exists($previousImagePath)
+        ) {
+            Storage::disk('public')->delete($previousImagePath);
+        }
 
         return redirect()->route('reports.show', $report)
             ->with('success', 'Laporan berhasil diperbarui.');

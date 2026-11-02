@@ -40,11 +40,16 @@ class ApiAuthController extends Controller
         ]);
 
         $token = $user->createToken('swms_mobile_token')->plainTextToken;
-        $user->sendEmailVerificationNotification();
+        $expiresAt = now()->addMinutes(config('auth.verification.expire', 5));
+        $user->sendVerificationNotificationUntil($expiresAt);
 
         return response()->json([
             'success' => true,
-            'message' => 'Registrasi berhasil.',
+            'message' => config('mail.default') === 'log'
+                ? 'Registrasi berhasil, tetapi mailer log tidak mengirim email ke inbox. Atur SMTP untuk pengiriman nyata.'
+                : 'Registrasi berhasil. Periksa inbox untuk tautan verifikasi.',
+            'email_sent' => config('mail.default') !== 'log',
+            'verification_expires_at' => $expiresAt->toIso8601String(),
             'data' => [
                 'user' => [
                     'id' => $user->id,
@@ -59,7 +64,7 @@ class ApiAuthController extends Controller
                 'email_verified' => false,
                 'verification_url' => URL::temporarySignedRoute(
                     'verification.verify',
-                    now()->addMinutes(config('auth.verification.expire', 60)),
+                    $expiresAt,
                     ['id' => $user->id, 'hash' => sha1($user->getEmailForVerification())]
                 ),
             ],
@@ -79,7 +84,7 @@ class ApiAuthController extends Controller
         if (!$user || !Hash::check($validated['password'], $user->password)) {
             return response()->json([
                 'success' => false,
-                'message' => 'Kredensial tidak cocok dengan data kami.',
+                'message' => 'Alamat email salah.',
             ], 401);
         }
 
@@ -128,12 +133,17 @@ class ApiAuthController extends Controller
             ]);
         }
 
-        $user->sendEmailVerificationNotification();
+        $expiresAt = now()->addMinutes(config('auth.verification.expire', 5));
+        $user->sendVerificationNotificationUntil($expiresAt);
 
         return response()->json([
-            'success' => true,
-            'message' => 'Tautan verifikasi baru telah dikirim ke alamat email Anda.',
-        ], 202);
+            'success' => config('mail.default') !== 'log',
+            'message' => config('mail.default') === 'log'
+                ? 'Mailer log tidak mengirim email ke inbox. Atur SMTP untuk pengiriman nyata.'
+                : 'Tautan verifikasi baru telah dikirim ke alamat email Anda.',
+            'email_sent' => config('mail.default') !== 'log',
+            'verification_expires_at' => $expiresAt->toIso8601String(),
+        ], config('mail.default') === 'log' ? 503 : 202);
     }
 
     public function profile(Request $request): JsonResponse

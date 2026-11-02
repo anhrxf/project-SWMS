@@ -8,6 +8,7 @@ use Database\Seeders\DatabaseSeeder;
 use App\Notifications\VerifyEmailNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
@@ -50,7 +51,9 @@ class SwmsSystemTest extends TestCase
             'password' => 'wrongpassword',
         ]);
 
-        $response->assertSessionHasErrors('email');
+        $response->assertSessionHasErrors([
+            'email' => 'Alamat email salah.',
+        ]);
         $this->assertGuest();
     }
 
@@ -68,6 +71,11 @@ class SwmsSystemTest extends TestCase
         ]);
 
         $response->assertRedirect('/email/verify');
+        $this->assertIsInt(session('email_verification_expires_at'));
+        $this->assertGreaterThan(
+            now()->timestamp,
+            session('email_verification_expires_at')
+        );
         $this->assertDatabaseHas('users', [
             'email' => 'wargabaru@swms.com',
             'phone' => '087799881122',
@@ -120,6 +128,71 @@ class SwmsSystemTest extends TestCase
         Notification::assertSentTo($user, VerifyEmailNotification::class);
     }
 
+    public function test_api_verification_resend_reports_log_mailer_as_not_sent(): void
+    {
+        Notification::fake();
+        config(['mail.default' => 'log']);
+        $user = User::factory()->unverified()->create();
+        $token = $user->createToken('test-device')->plainTextToken;
+
+        $this->withToken($token)
+            ->withHeader('Accept', 'application/json')
+            ->post('/api/v1/auth/email/verification-notification')
+            ->assertStatus(503)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('email_sent', false);
+    }
+
+    public function test_verification_page_explains_that_log_mailer_does_not_send_email(): void
+    {
+        config(['mail.default' => 'log']);
+        $user = User::factory()->unverified()->create();
+
+        $this->actingAs($user)
+            ->get('/email/verify')
+            ->assertOk()
+            ->assertSee('tidak dikirim ke inbox')
+            ->assertSee('storage/logs/laravel.log');
+    }
+
+    public function test_verification_page_does_not_show_log_warning_when_smtp_is_configured(): void
+    {
+        config(['mail.default' => 'smtp']);
+        $user = User::factory()->unverified()->create();
+
+        $this->actingAs($user)
+            ->get('/email/verify')
+            ->assertOk()
+            ->assertSee('Tautan verifikasi dikirim ke')
+            ->assertDontSee('Mailer aplikasi masih menggunakan mode log')
+            ->assertDontSee('tidak dikirim ke inbox');
+    }
+
+    public function test_verification_page_shows_a_five_minute_countdown(): void
+    {
+        $user = User::factory()->unverified()->create();
+        $expiresAt = now()->addMinutes(5)->timestamp;
+
+        $this->actingAs($user)
+            ->withSession(['email_verification_expires_at' => $expiresAt])
+            ->get('/email/verify')
+            ->assertOk()
+            ->assertSee('role="timer"', false)
+            ->assertSee('Tautan verifikasi kedaluwarsa dalam')
+            ->assertSee('Tautan berlaku selama 5 menit.');
+    }
+
+    public function test_verification_page_shows_expired_state_after_countdown_finishes(): void
+    {
+        $user = User::factory()->unverified()->create();
+
+        $this->actingAs($user)
+            ->withSession(['email_verification_expires_at' => now()->subSecond()->timestamp])
+            ->get('/email/verify')
+            ->assertOk()
+            ->assertSee('Tautan verifikasi telah kedaluwarsa.');
+    }
+
     public function test_api_registration_returns_verification_link_and_api_account_is_activated_by_link(): void
     {
         Notification::fake();
@@ -136,7 +209,26 @@ class SwmsSystemTest extends TestCase
         $verificationUrl = $response->json('data.verification_url');
 
         $this->assertNotEmpty($verificationUrl);
+        $query = [];
+        parse_str((string) parse_url($verificationUrl, PHP_URL_QUERY), $query);
+        $this->assertSame(
+            strtotime($response->json('verification_expires_at')),
+            (int) ($query['expires'] ?? 0)
+        );
+        $this->assertSame(5, config('auth.verification.expire'));
         Notification::assertSentTo($user, VerifyEmailNotification::class);
+        $notification = Notification::sent($user, VerifyEmailNotification::class)->first();
+        $message = $notification->toMail($user);
+        $notificationQuery = [];
+        parse_str(
+            (string) parse_url($message->actionUrl, PHP_URL_QUERY),
+            $notificationQuery
+        );
+        $this->assertSame($query['expires'], $notificationQuery['expires']);
+        $this->assertContains(
+            'Tautan ini berlaku selama 5 menit. Jika Anda tidak membuat akun, abaikan email ini.',
+            $message->outroLines
+        );
         $this->get($verificationUrl)->assertRedirect('/login');
         $this->assertTrue($user->fresh()->hasVerifiedEmail());
     }
@@ -308,6 +400,7 @@ class SwmsSystemTest extends TestCase
     public function test_user_can_create_report_with_image_and_ai_detection(): void
     {
         Storage::fake('public');
+        $this->fakeMlPrediction();
 
         $user = User::where('email', 'user@swms.com')->first();
         $file = UploadedFile::fake()->image('plastic_bottle.jpg', 400, 400);
@@ -316,6 +409,8 @@ class SwmsSystemTest extends TestCase
             'title' => 'Botol Plastik di Selokan',
             'description' => 'Banyak botol plastik menyumbat got depan rumah.',
             'waste_category' => 'plastic',
+            'ai_detected_category' => 'paper',
+            'ai_confidence' => 99,
             'image' => $file,
             'latitude' => -6.2000,
             'longitude' => 106.8166,
@@ -332,6 +427,8 @@ class SwmsSystemTest extends TestCase
         $report = Report::where('title', 'Botol Plastik di Selokan')->first();
         $this->assertNotNull($report);
         $this->assertNotNull($report->ai_confidence);
+        $this->assertSame('plastic', $report->ai_detected_category);
+        $this->assertSame(92.5, (float) $report->ai_confidence);
         $this->assertDatabaseHas('report_status_logs', [
             'report_id' => $report->id,
             'new_status' => 'pending',
@@ -364,6 +461,7 @@ class SwmsSystemTest extends TestCase
 
     public function test_ai_classify_endpoint(): void
     {
+        $this->fakeMlPrediction();
         $file = UploadedFile::fake()->image('leaves.jpg', 300, 300);
 
         $response = $this->post('/api/v1/ai/classify', [
@@ -381,6 +479,94 @@ class SwmsSystemTest extends TestCase
                 'recommendation',
             ],
         ]);
+    }
+
+    public function test_report_is_not_saved_when_ml_service_is_unavailable(): void
+    {
+        Storage::fake('public');
+        Http::fake([
+            '*' => Http::response(['detail' => 'Model is not loaded.'], 503),
+        ]);
+
+        $user = User::where('email', 'user@swms.com')->first();
+        $response = $this->actingAs($user)->post('/reports', [
+            'title' => 'Laporan tanpa layanan AI',
+            'description' => 'Laporan ini tidak boleh tersimpan tanpa prediksi.',
+            'waste_category' => 'plastic',
+            'image' => UploadedFile::fake()->image('plastic.jpg'),
+        ]);
+
+        $response->assertSessionHasErrors('image');
+        $this->assertDatabaseMissing('reports', [
+            'title' => 'Laporan tanpa layanan AI',
+        ]);
+        $this->assertSame([], Storage::disk('public')->allFiles('reports'));
+    }
+
+    public function test_api_report_is_not_saved_when_ml_service_is_unavailable(): void
+    {
+        Storage::fake('public');
+        Http::fake([
+            '*' => Http::response(['detail' => 'Model is not loaded.'], 503),
+        ]);
+
+        $user = User::where('email', 'user@swms.com')->first();
+        $token = $user->createToken('classifier-test')->plainTextToken;
+        $response = $this->withToken($token)
+            ->withHeader('Accept', 'application/json')
+            ->post('/api/v1/reports', [
+                'title' => 'Laporan API tanpa layanan AI',
+                'description' => 'Laporan ini tidak boleh tersimpan tanpa prediksi.',
+                'waste_category' => 'plastic',
+                'image' => UploadedFile::fake()->image('plastic.jpg'),
+            ]);
+
+        $response->assertStatus(503)
+            ->assertJsonPath('success', false);
+        $this->assertDatabaseMissing('reports', [
+            'title' => 'Laporan API tanpa layanan AI',
+        ]);
+        $this->assertSame([], Storage::disk('public')->allFiles('reports'));
+    }
+
+    private function fakeMlPrediction(): void
+    {
+        Http::fake([
+            '*' => Http::response([
+                'success' => true,
+                'category' => 'plastic',
+                'confidence' => 92.5,
+                'breakdown' => [
+                    'organic' => 2.5,
+                    'plastic' => 92.5,
+                    'paper' => 5.0,
+                ],
+                'recommendation' => [],
+            ], 200),
+        ]);
+    }
+
+    public function test_ai_lab_displays_the_saved_evaluation_report(): void
+    {
+        $evaluationPath = base_path('machine-learning/artifacts/evaluation.json');
+        if (!is_file($evaluationPath)) {
+            $this->markTestSkipped('Train the model to generate its evaluation report.');
+        }
+
+        $evaluation = json_decode(
+            file_get_contents($evaluationPath),
+            true,
+            512,
+            JSON_THROW_ON_ERROR,
+        );
+        $admin = User::where('email', 'admin@swms.com')->first();
+
+        $this->actingAs($admin)
+            ->get('/ai-lab')
+            ->assertOk()
+            ->assertSee(number_format($evaluation['test_accuracy'] * 100, 2) . '%')
+            ->assertSee('Confusion matrix')
+            ->assertSee('Macro average / akurasi');
     }
 
     public function test_api_v1_auth_and_reports(): void
@@ -406,6 +592,15 @@ class SwmsSystemTest extends TestCase
                 'data',
             ],
         ]);
+    }
+
+    public function test_api_login_returns_requested_invalid_credentials_message(): void
+    {
+        $this->postJson('/api/v1/auth/login', [
+            'email' => 'admin@swms.com',
+            'password' => 'wrong-password',
+        ])->assertUnauthorized()
+            ->assertJsonPath('message', 'Alamat email salah.');
     }
 
     public function test_admin_cannot_create_report(): void

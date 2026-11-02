@@ -18,8 +18,6 @@
         @csrf
 
         <!-- Hidden AI Results & Coordinates -->
-        <input type="hidden" name="ai_detected_category" x-model="aiResult.category">
-        <input type="hidden" name="ai_confidence" x-model="aiResult.confidence">
         <input type="hidden" name="latitude" x-model="latitude">
         <input type="hidden" name="longitude" x-model="longitude">
 

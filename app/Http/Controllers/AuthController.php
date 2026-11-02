@@ -48,7 +48,7 @@ class AuthController extends Controller
         }
 
         return back()->withErrors([
-            'email' => 'Kredensial yang diberikan tidak cocok dengan data kami.',
+            'email' => 'Alamat email salah.',
         ])->onlyInput('email');
     }
 
@@ -93,10 +93,17 @@ class AuthController extends Controller
 
         Auth::login($user);
         $request->session()->regenerate();
-        $user->sendEmailVerificationNotification();
+        $expiresAt = now()->addMinutes(config('auth.verification.expire', 5));
+        $user->sendVerificationNotificationUntil($expiresAt);
+        $request->session()->put('email_verification_expires_at', $expiresAt->timestamp);
 
         return redirect()->route('verification.notice')
-            ->with('info', 'Akun berhasil dibuat. Periksa email Anda untuk memverifikasi akun sebelum masuk.');
+            ->with(
+                'info',
+                config('mail.default') === 'log'
+                    ? 'Akun berhasil dibuat, tetapi mailer log tidak mengirim email ke inbox. Atur SMTP Gmail di .env.'
+                    : 'Akun berhasil dibuat. Periksa email Anda untuk memverifikasi akun sebelum masuk.'
+            );
     }
 
     public function logout(Request $request): RedirectResponse
@@ -155,10 +162,17 @@ class AuthController extends Controller
 
         if ($emailChanged) {
             $user->markEmailAsUnverified();
-            $user->sendEmailVerificationNotification();
+            $expiresAt = now()->addMinutes(config('auth.verification.expire', 5));
+            $user->sendVerificationNotificationUntil($expiresAt);
+            $request->session()->put('email_verification_expires_at', $expiresAt->timestamp);
 
             return redirect()->route('verification.notice')
-                ->with('info', 'Email diperbarui. Verifikasi alamat email baru sebelum menggunakan aplikasi.');
+                ->with(
+                    'info',
+                    config('mail.default') === 'log'
+                        ? 'Email diperbarui, tetapi mailer log tidak mengirim tautan ke inbox. Atur SMTP Gmail di .env.'
+                        : 'Email diperbarui. Verifikasi alamat email baru sebelum menggunakan aplikasi.'
+                );
         }
 
         return back()->with('success', 'Profil Anda berhasil diperbarui!');

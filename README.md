@@ -3,8 +3,7 @@
 [![Laravel](https://img.shields.io/badge/Laravel-11%20%2F%2013-FF2D20?style=for-the-badge&logo=laravel&logoColor=white)](https://laravel.com)
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![TailwindCSS](https://img.shields.io/badge/Tailwind-CSS-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
-[![PHPUnit](https://img.shields.io/badge/Tests-11%20Passed-success?style=for-the-badge&logo=php)](https://phpunit.de)
-[![Accuracy](https://img.shields.io/badge/ML%20Accuracy-100%25%20(%E2%89%A580%25%20Target)-brightgreen?style=for-the-badge&logo=scikit-learn)](./machine-learning)
+[![PHPUnit](https://img.shields.io/badge/Tests-28%20Passed-success?style=for-the-badge&logo=php)](https://phpunit.de)
 
 Sistem Pengelolaan Sampah Cerdas berbasis teknologi web modern, integrasi REST API, dan Computer Vision Machine Learning untuk klasifikasi sampah otomatis. Proyek ini dikembangkan secara komprehensif sebagai pemenuhan **Technical Coding Test – Fullstack Developer di Bilcode Technology**.
 
@@ -14,8 +13,9 @@ Sistem Pengelolaan Sampah Cerdas berbasis teknologi web modern, integrasi REST A
 1. [Arsitektur Sistem](#1-arsitektur-sistem)
 2. [Fitur Utama](#2-fitur-utama)
    - [A. Website Development (25%)](#a-website-development)
-   - [B. Backend & REST API (15%)](#b-backend--rest-api)
-   - [C. Machine Learning (20%)](#c-machine-learning)
+   - [B. Mobile Development (20%)](#b-mobile-development)
+   - [C. Backend & REST API (15%)](#c-backend--rest-api)
+   - [D. Machine Learning (20%)](#d-machine-learning)
 3. [Skema Database & ERD (5%)](#3-skema-database--erd)
 4. [Akun Demo Pengujian](#4-akun-demo-pengujian)
 5. [Panduan Instalasi & Penggunaan](#5-panduan-instalasi--penggunaan)
@@ -41,13 +41,12 @@ graph TD
         ReportController["Report Management CRUD"]
         DashboardService["Statistics & Analytics Aggregator"]
         UserMgmt["User Management Controller"]
-        ClassifierService["WasteClassifierService (Hybrid)"]
+        ClassifierService["WasteClassifierService (Laravel HTTP client)"]
     end
 
     subgraph ML ["Machine Learning Microservice (Python)"]
         MLAPI["REST API (/predict)"]
-        FeatureExtractor["Visual Feature Extractor"]
-        Model["Softmax Classifier (model.pkl)"]
+        Model["MobileNetV3 Small (PyTorch)"]
         Heatmap["Confusion Matrix & Reports"]
     end
 
@@ -112,7 +111,14 @@ graph TD
 
 ---
 
-### B. Backend & REST API
+### B. Mobile Development
+- Aplikasi Flutter warga untuk registrasi, login, dan melihat status verifikasi email.
+- Dashboard ringkasan serta riwayat laporan milik warga; akun admin diarahkan memakai dashboard website.
+- Form laporan mendukung kamera/galeri, foto wajib, koordinat GPS wajib, deskripsi, kategori sampah, dan prediksi AI.
+- Menggunakan Laravel API dengan bearer token yang disimpan melalui secure storage.
+- Sumber kode berada di [`mobile/`](./mobile). Petunjuk menjalankan aplikasi dan konfigurasi endpoint tersedia pada bagian instalasi.
+
+### C. Backend & REST API
 - Dibangun dengan arsitektur RESTful standar, didukung **Laravel Sanctum** untuk pengamanan Bearer Token.
 - Endpoint lengkap untuk klien mobile/eksternal:
   - `POST /api/v1/auth/register`
@@ -128,21 +134,21 @@ graph TD
 
 ---
 
-### C. Machine Learning
+### D. Machine Learning
 - **Tiga Kategori Klasifikasi**:
   1. `organic`: Sampah Organik (sisa makanan, sayuran, daun, buah)
   2. `plastic`: Sampah Plastik (botol, kantong kresek, kemasan)
   3. `paper`: Sampah Kertas (kardus, kertas arsip, koran)
-- **Dataset**: 165 gambar terdistribusi merata (55 organik, 55 plastik, 55 kertas) - *Memenuhi batas minimal 150 gambar*.
+- **Dataset**: 150 foto sumber teratribusi (50 organik, 50 plastik, 50 kertas) dengan checksum SHA-256.
 - **Evaluasi Model**:
   - **Target Akurasi**: $\ge 80.0\%$
-  - **Akurasi Pengujian (Test Set)**: **100.00%** (Tercapai)
-  - **Akurasi Pelatihan (Train Set)**: **99.24%**
-  - **Classification Report**: Precision 100%, Recall 100%, F1-Score 100%.
-  - **Confusion Matrix**: Tersimpan dalam berkas visual [`machine-learning/confusion_matrix.png`](./machine-learning/confusion_matrix.png).
+  - Dataset pelatihan berisi 150 foto sumber (50 per kelas) dengan manifest atribusi dan hash pada [`machine-learning/training_photos/`](./machine-learning/training_photos).
+  - Pipeline menggunakan split train/validation/test terpisah, deduplikasi berdasarkan SHA-256, early stopping, classification report, confusion matrix, dan checkpoint PyTorch.
+  - Evaluasi holdout saat ini: **91,30%** pada 23 foto test (akurasi makro 91,67%); precision/recall/F1 per kelas tersedia di `machine-learning/artifacts/evaluation.json`.
+  - Angka ini hanya berlaku pada split kecil dari dataset tersebut; tidak menjamin performa untuk semua foto sampah di dunia nyata.
 - **Layanan Microservice**:
-  - REST API endpoint `POST /predict` (Flask & FastAPI).
-  - Terintegrasi langsung dengan backend Laravel melalui `WasteClassifierService`.
+  - FastAPI `POST /predict` memuat checkpoint hasil training. Laravel selalu meminta prediksi server-side dan tidak menerima confidence yang dikirim klien.
+  - Jika model atau layanan tidak tersedia, klasifikasi gagal secara eksplisit; laporan tidak disimpan dan foto sementara dibersihkan.
 
 ---
 
@@ -177,6 +183,7 @@ Aplikasi telah dilengkapi seeder akun demo dengan fitur **1-Klik Isi Kredensial*
 - Composer $\ge$ 2.0
 - Node.js $\ge$ 18 & NPM (opsional jika ingin memodifikasi aset Vite)
 - Python $\ge$ 3.10 (untuk modul Machine Learning)
+- Flutter SDK versi stabil (untuk aplikasi mobile)
 
 ### Langkah 1: Kloning & Pengaturan Environment
 ```bash
@@ -205,56 +212,115 @@ memang ingin mengatur ulang database lokal; jangan gunakan untuk pembaruan rutin
 
 ### Pengiriman dan verifikasi email
 
-Pendaftaran mengirim tautan verifikasi yang berlaku selama 60 menit. Akun belum dapat
+Pendaftaran mengirim tautan verifikasi yang berlaku selama 5 menit, dengan hitung mundur
+pada halaman verifikasi. Akun belum dapat
 mengakses dashboard, laporan, atau fitur aplikasi sebelum tautan dibuka. Jika email
 diubah dari halaman profil, alamat baru harus diverifikasi ulang. Verifikasi membuktikan
 bahwa pengguna dapat menerima email tersebut; hal ini tidak memeriksa apakah alamat
 terdaftar sebagai akun Google.
 
-Mailer bawaan `.env.example` menggunakan `MAIL_MAILER=log`, sehingga email tidak
-dikirim keluar dan dapat diperiksa di `storage/logs/laravel.log`. Untuk pengiriman nyata,
-atur SMTP di `.env`, misalnya:
+Mailer bawaan `.env.example` menggunakan `MAIL_MAILER=log`, sehingga email **tidak
+dikirim ke inbox**; isi email hanya dicatat di `storage/logs/laravel.log`. Untuk
+mengirim verifikasi melalui Gmail:
+
+1. Aktifkan Verifikasi 2 Langkah pada akun Google pengirim.
+2. Buat **App Password** dari pengaturan keamanan akun Google. Password ini berbeda
+   dari password login Gmail dan jangan dibagikan atau dimasukkan ke repository.
+3. Isi pengaturan berikut di `.env` lokal. `MAIL_USERNAME` dan `MAIL_FROM_ADDRESS`
+   harus menggunakan alamat Gmail yang sama:
 
 ```dotenv
-APP_URL=https://alamat-aplikasi-anda
 MAIL_MAILER=smtp
 MAIL_SCHEME=smtp
 MAIL_HOST=smtp.gmail.com
 MAIL_PORT=587
-MAIL_USERNAME=alamat-gmail-anda
-MAIL_PASSWORD=password-aplikasi-google
-MAIL_FROM_ADDRESS=alamat-gmail-anda
+MAIL_USERNAME=alamat-gmail-pengirim@gmail.com
+MAIL_PASSWORD=app-password-google-16-karakter
+MAIL_FROM_ADDRESS=alamat-gmail-pengirim@gmail.com
 MAIL_FROM_NAME="Smart Waste Management"
 ```
 
-Untuk Gmail, aktifkan verifikasi dua langkah lalu buat **App Password** dan gunakan itu
-sebagai `MAIL_PASSWORD`; jangan gunakan kata sandi akun Google. `APP_URL` harus alamat
-publik aplikasi agar tautan verifikasi yang ditandatangani dapat dibuka penerima.
+4. Bersihkan cache konfigurasi dan mulai ulang server Laravel:
+
+   ```bash
+   php artisan config:clear
+   ```
+
+5. Daftarkan akun dengan alamat email lain yang dapat Anda akses dan periksa Inbox
+   maupun folder Spam. Untuk menguji SMTP tanpa mendaftar akun baru, kirim ulang
+   verifikasi dari halaman verifikasi.
+
+Jika masih tidak terkirim, periksa `storage/logs/laravel.log` untuk pesan error SMTP,
+pastikan App Password benar dan tidak menggunakan password akun, serta pastikan
+jaringan tidak memblokir koneksi SMTP port 587. `APP_URL` pada deployment harus
+mengarah ke alamat publik aplikasi agar tautan bertanda tangan dapat dibuka penerima;
+`http://localhost:8000` hanya sesuai untuk pengembangan lokal.
 
 ### Langkah 3: Menjalankan Server Web Laravel
 ```bash
 php artisan serve
 ```
 Aplikasi website dapat dibuka pada peramban di: **`http://localhost:8000`**.
+Sebelum mengirim laporan atau menggunakan klasifikasi gambar, jalankan Microservice
+Machine Learning pada Langkah 5.
+
+### Langkah 4: Menjalankan aplikasi mobile
+
+Pastikan server Laravel aktif, lalu jalankan Flutter Web pada origin yang diizinkan oleh
+`SWMS_CORS_ALLOWED_ORIGINS`:
+
+```bash
+cd mobile
+flutter pub get
+flutter run -d chrome --web-port 5000 --dart-define=API_BASE_URL=http://127.0.0.1:8000/api/v1
+```
+
+Untuk Android Emulator, jalankan Laravel agar dapat diakses dari emulator dan gunakan
+alamat host emulator `10.0.2.2`:
+
+```bash
+php artisan serve --host=0.0.0.0 --port=8000
+cd mobile
+flutter run --dart-define=API_BASE_URL=http://10.0.2.2:8000/api/v1
+```
+
+HTTP hanya diizinkan pada Android **debug** build untuk pengembangan lokal. Untuk APK
+rilis, gunakan endpoint HTTPS:
+
+```bash
+flutter build apk --release --dart-define=API_BASE_URL=https://domain-anda/api/v1
+```
+
+Jika Flutter Web dijalankan pada origin lain, tambahkan origin persisnya ke
+`SWMS_CORS_ALLOWED_ORIGINS` di `.env`, lalu bersihkan cache konfigurasi Laravel dengan
+`php artisan config:clear`. Jangan gunakan wildcard untuk origin aplikasi produksi.
+Tes parser model Flutter dijalankan dengan `cd mobile && flutter test`.
 
 ---
 
-### Langkah 4 (Opsional): Menjalankan Machine Learning Microservice
-Jika ingin menjalankan microservice prediksi Python secara mandiri:
+### Langkah 5: Menyiapkan Model dan Menjalankan Microservice
+Layanan AI harus aktif untuk klasifikasi gambar dan penyimpanan laporan. Jika folder foto
+dataset belum tersedia, ambil dataset terlebih dahulu:
 ```bash
 cd machine-learning
 
 # Install dependensi ML
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 
-# Menjalankan training (otomatis membuat dataset, evaluasi, dan model.pkl)
-python generate_dataset.py
+# Hanya jika dataset training_photos belum tersedia
+python download_training_photos.py
+
+# Train dan evaluasi model; hasil tersimpan di artifacts/
 python train.py
 
 # Menjalankan REST API Microservice pada port 8001
 python app.py
 ```
-> *Catatan*: Backend Laravel memiliki sistem *Graceful Fallback* cerdas: jika microservice Python tidak aktif, sistem otomatis menggunakan engine klasifikasi visual bawaan sehingga website tetap berjalan 100% normal tanpa kendala!
+Periksa hasil aktual pada `machine-learning/artifacts/evaluation.json` dan confusion
+matrix sebelum menyatakan target akurasi 80% tercapai. URL API Laravel default adalah
+`http://127.0.0.1:8001/predict`; ubah `ML_API_URL` di `.env` bila alamat layanan berbeda.
+Tanpa checkpoint terlatih, layanan FastAPI gagal saat startup dan Laravel mengembalikan
+HTTP 503 untuk permintaan klasifikasi, tanpa menyimpan laporan atau foto yang gagal.
 
 ---
 
@@ -266,26 +332,9 @@ Aplikasi dilengkapi dengan rangkaian unit & feature test komprehensif menggunaka
 php artisan test
 ```
 
-### Hasil Pengujian:
-```text
-   PASS  Tests\Unit\ExampleTest
-  ✓ that true is true
-
-   PASS  Tests\Feature\SwmsSystemTest
-  ✓ guest is redirected to login
-  ✓ user can login with valid credentials
-  ✓ user cannot login with invalid credentials
-  ✓ new user can register
-  ✓ admin can access dashboard and users
-  ✓ regular user cannot access user management
-  ✓ user can create report with image and ai detection
-  ✓ admin can update report status with notes
-  ✓ ai classify endpoint
-  ✓ api v1 auth and reports
-
-  Tests:    11 passed (42 assertions)
-  Duration: 8.16s
-```
+Jalankan juga `cd mobile && flutter analyze` dan `flutter test` untuk memeriksa aplikasi
+Flutter. Tes endpoint FastAPI menggunakan `cd machine-learning && python -m unittest test_fastapi_app -v`.
+Build APK memerlukan Android SDK dan Java yang terpasang.
 
 ---
 
@@ -318,14 +367,12 @@ project-SWMS/
 │   ├── ERD.md                          # Dokumentasi ERD & Kamus Data
 │   └── API_DOCUMENTATION.md            # Dokumentasi Endpoint REST API
 ├── machine-learning/
-│   ├── dataset/                        # 165 Gambar Sampah (Organik, Plastik, Kertas)
-│   ├── generate_dataset.py             # Generator Dataset Sampah
-│   ├── classifier.py                   # Arsitektur Model Softmax Neural Classifier
-│   ├── train.py                        # Pipeline Pelatihan & Evaluasi
-│   ├── app.py                          # REST API Microservice (Flask/FastAPI)
-│   ├── model.pkl                       # Berkas Model Hasil Pelatihan
-│   ├── confusion_matrix.png            # Visualisasi Confusion Matrix Heatmap
-│   ├── classification_report.json      # Metrik Evaluasi Model
+│   ├── training_photos/                # 150 foto dan manifest sumber/hash
+│   ├── download_training_photos.py     # Pengunduh dataset dengan revision tetap
+│   ├── classifier.py                   # MobileNetV3 dan transformasi gambar
+│   ├── train.py                        # Pipeline training & evaluasi holdout
+│   ├── fastapi_app.py                  # REST API prediksi FastAPI
+│   ├── artifacts/                      # Checkpoint dan metrik hasil training
 │   └── README.md                       # Panduan Teknis Machine Learning
 ├── resources/views/                    # Antarmuka Blade Responsif
 │   ├── layouts/app.blade.php           # Master Layout (Sidebar, Navbar, Toast)
@@ -346,13 +393,15 @@ project-SWMS/
 
 ## 8. Checklist Ketentuan Pengumpulan
 
-- [x] **Source Code & GitHub Repository**: Struktur bersih, modular, dan terorganisir rapi.
+- [x] **Source Code & Panduan**: Struktur proyek dan instruksi instalasi tersedia di repository.
 - [x] **Website Development (Laravel)**: Role authentication (Admin & User), dashboard statistik, CRUD laporan, filter & search, manajemen pengguna, update status (Pending, In Progress, Completed, Rejected), desain responsif.
 - [x] **Integrasi AI Image Detection**: Live visual classification, confidence meter, rekomendasi daur ulang.
 - [x] **REST API & Integrasi**: Dokumentasi API lengkap (`/api-docs` & `docs/API_DOCUMENTATION.md`), endpoint CRUD dan upload foto.
 - [x] **Database Schema & ERD**: Diagram Mermaid dan kamus data komprehensif (`docs/ERD.md`).
-- [x] **Machine Learning**: Dataset 165 gambar ($\ge 150$), 3 kategori (Organik, Plastik, Kertas), training pipeline, akurasi testing 100% ($\ge 80\%$), confusion matrix heatmap, classification report, REST API microservice.
-- [x] **Panduan Instalasi**: Dokumentasi langkah demi langkah mudah dipahami di README.
+- [x] **Machine Learning source**: Dataset 150 foto, tiga kategori, training pipeline, API FastAPI, dan laporan metrik saat training.
+- [x] **Target akurasi 80%**: Evaluasi aktual mencapai 91,30% pada 23 sampel test; batasan dataset kecil dijelaskan di dokumentasi.
+- [ ] **APK / demo ter-host / video demo**: Belum disertakan; perlu toolchain Android dan proses deployment/rekaman.
+- [x] **Panduan Instalasi**: Dokumentasi langkah demi langkah tersedia di README.
 
 ---
 *Dikembangkan dengan dedikasi untuk Technical Coding Test – Fullstack Developer Bilcode Technology.*

@@ -1,126 +1,106 @@
-# SWMS - Machine Learning Waste Image Classification
+# Klasifikasi Sampah SWMS
 
-Modul Machine Learning untuk **Smart Waste Management System (SWMS)** yang bertugas mengklasifikasikan gambar sampah secara otomatis ke dalam 3 kategori utama:
-1. **Organic Waste** (Sampah Organik: sisa makanan, daun, buah, sayuran)
-2. **Plastic Waste** (Sampah Plastik: botol PET, kantong kresek, wadah plastik)
-3. **Paper Waste** (Sampah Kertas: kardus, karton, koran, kertas dokumen)
+Layanan ini melatih model PyTorch MobileNetV3 Small untuk mengklasifikasikan foto
+ke tiga kelas: `organic`, `plastic`, dan `paper`. FastAPI menyediakan prediksi
+untuk website Laravel dan aplikasi Flutter.
 
----
+## Dataset dan lisensi
 
-## 1. Komposisi Dataset
-- **Total Gambar**: 165 gambar (Memenuhi kriteria minimal 150 gambar)
-  - `dataset/organic/`: 55 gambar
-  - `dataset/plastic/`: 55 gambar
-  - `dataset/paper/`: 55 gambar
-- **Dimensi**: 224x224 RGB
-- **Sumber**: Dataset sintetis & augmentasi visual terstruktur dengan noise Gaussian, tekstur permukaan, dan variasi pencahayaan realistis.
+`training_photos/` berisi 150 foto (50 per kelas) dari dataset
+[`NeoAivara/Waste_Classification_data`](https://huggingface.co/datasets/NeoAivara/Waste_Classification_data/tree/d58fa9b9187dfd63b726f6f955e2414c0c7fda4d),
+revision `d58fa9b9187dfd63b726f6f955e2414c0c7fda4d`. Dataset sumber menyatakan
+lisensi Apache-2.0. Label `biological` dipetakan menjadi `organic`; label
+`paper` dan `plastic` dipertahankan. Manifest `training_photos/attributions.csv`
+mencatat revision, row sumber, lisensi, URL, dan SHA-256 setiap file.
 
----
+Dataset kecil ini hanya sampel untuk technical test dan tidak mewakili semua
+kondisi sampah di dunia nyata. Gambar bertema bahan/produk tidak selalu
+menunjukkan sampah yang sudah dibuang. Interpretasikan hasil evaluasi dan
+prediksi dengan batasan tersebut; model bukan pengganti pemeriksaan petugas.
 
-## 2. Arsitektur Model & Ekstraksi Fitur
-- **Ekstraksi Fitur Visual**:
-  - Statistik kanal RGB (mean, std per kanal)
-  - Histogram warna multi-bin
-  - Momen saturasi & kecerahan HSV
-  - Deteksi dominansi pigmen organik (klorofil, pigmen cokelat)
-  - Deteksi specular highlight & pantulan plastik
-  - Analisis tekstur dan energi gradien tepi (edge gradients)
-- **Model Classifier**:
-  - Multi-Class Softmax Neural Classifier dengan Cross-Entropy Loss dan Momentum Optimizer ($lr=0.08, \text{epochs}=750, \text{reg}=0.005$).
+Jika dataset tidak tersedia, ambil ulang subset yang sama:
 
----
-
-## 3. Hasil Evaluasi Model
-Model diuji menggunakan data testing (20% holdout / 33 sampel) dengan hasil evaluasi sebagai berikut:
-
-- **Target Akurasi**: $\ge 80.0\%$
-- **Testing Accuracy**: **100.00%** (Tercapai / Passed)
-- **Training Accuracy**: **99.24%**
-
-### Classification Report
-
-| Kategori | Precision | Recall | F1-Score | Jumlah Sampel (Support) |
-| :--- | :---: | :---: | :---: | :---: |
-| **Organic Waste** | 100.00% | 100.00% | 100.00% | 11 |
-| **Plastic Waste** | 100.00% | 100.00% | 100.00% | 11 |
-| **Paper Waste** | 100.00% | 100.00% | 100.00% | 11 |
-| **Macro Average** | **100.00%** | **100.00%** | **100.00%** | **33** |
-| **Overall Accuracy** | - | - | **100.00%** | **33** |
-
-### Confusion Matrix
-Visualisasi heatmap tersimpan pada berkas: [`confusion_matrix.png`](./confusion_matrix.png).
-
-```
-               Pred Organic  Pred Plastic  Pred Paper
-True Organic :         11             0           0
-True Plastic :          0            11           0
-True Paper   :          0             0          11
+```powershell
+python -m pip install -r requirements.txt
+python download_training_photos.py
 ```
 
----
+## Training dan evaluasi
 
-## 4. Cara Menjalankan Training & Testing
+Jalankan dari folder `machine-learning`:
 
-1. Masuk ke direktori `machine-learning`:
-   ```bash
-   cd machine-learning
-   ```
+```powershell
+python -m pip install -r requirements.txt
+python train.py
+```
 
-2. Jalankan pembuatan dataset:
-   ```bash
-   python generate_dataset.py
-   ```
+Pipeline memeriksa ketiga kelas dan minimal 150 gambar unik, membagi data secara
+stratified menjadi train/validation/test, memilih checkpoint berdasarkan
+validation loss, lalu mengevaluasi sekali pada test split. Random seed adalah
+42. Transfer learning memakai bobot ImageNet MobileNetV3; saat pertama kali
+training, bobot tersebut perlu diunduh. `--epochs`, `--batch-size`, dan
+`--patience` dapat digunakan untuk menyesuaikan training.
 
-3. Jalankan proses training dan evaluasi model:
-   ```bash
-   python train.py
-   ```
-   *Output*: Berkas `model.pkl`, `confusion_matrix.png`, `classification_report.json`, dan `evaluation_results.txt`.
+Hasil ditulis ke `artifacts/`:
 
----
+- `model.pt`: checkpoint PyTorch dan metadata kelas.
+- `evaluation.json`: akurasi test, classification report, confusion matrix,
+  ukuran split, lisensi dataset, dan status target 80%.
+- `confusion_matrix.png`: visualisasi confusion matrix test.
+- `training_history.json`: loss dan akurasi train/validation tiap epoch.
+- `test_predictions.csv`: label aktual dan prediksi per foto pada test split.
 
-## 5. Menjalankan REST API Microservice
+### Hasil evaluasi saat ini
 
-Tersedia dua opsi server REST API yang kompatibel:
+Training terakhir (seed 42, checkpoint terbaik epoch 1) menghasilkan akurasi
+test **91,30%** pada 23 foto: tujuh organic, delapan paper, dan delapan plastic.
+Macro precision, recall, dan F1-score masing-masing **91,67%**. Matriksnya
+(urutan baris/kolom: organic, paper, plastic):
 
-### Opsi A: Flask Microservice (Default)
-```bash
+```text
+             organic  paper  plastic
+organic           7      0        0
+paper             0      7        1
+plastic           0      1        7
+```
+
+Dengan demikian, target test 80% tercapai pada split ini (`target_accuracy_met`
+di `evaluation.json` bernilai `true`). Test hanya berisi 23 foto dari subset
+150-foto yang kecil; hasil ini tidak membuktikan generalisasi pada semua jenis
+sampah, kamera, pencahayaan, atau latar. Jangan menganggapnya sebagai jaminan
+akurasi produksi.
+
+## Menjalankan FastAPI
+
+FastAPI memerlukan `artifacts/model.pt`; tanpa checkpoint, startup gagal secara
+eksplisit dan tidak ada prediksi fallback.
+
+```powershell
 python app.py
 ```
-Server akan aktif di `http://127.0.0.1:8001`.
 
-### Opsi B: FastAPI Microservice
-```bash
-uvicorn fastapi_app:app --host 127.0.0.1 --port 8001 --reload
-```
-Swagger UI interaktif dapat diakses pada `http://127.0.0.1:8001/docs`.
+Service berjalan pada `http://127.0.0.1:8001`. Dokumentasi interaktif ada di
+`http://127.0.0.1:8001/docs`. Health check:
 
----
-
-## 6. Contoh Endpoint Prediksi
-
-### Request
-```bash
-curl -X POST "http://127.0.0.1:8001/predict" \
-     -H "Content-Type: multipart/form-data" \
-     -F "file=@dataset/plastic/plastic_001.jpg"
+```powershell
+Invoke-RestMethod http://127.0.0.1:8001/health
 ```
 
-### JSON Response
-```json
-{
-  "success": true,
-  "category": "plastic",
-  "confidence": 98.42,
-  "breakdown": {
-    "organic": 0.72,
-    "plastic": 98.42,
-    "paper": 0.86
-  },
-  "recommendation": {
-    "type": "Daur Ulang Plastik / Bank Sampah",
-    "action": "Bilas bersih dari sisa makanan/minuman, pipihkan untuk hemat ruang, lalu setorkan ke Bank Sampah.",
-    "bin": "Tempat Sampah Kuning (Anorganik / Plastik)"
-  }
-}
+Contoh prediksi memakai PowerShell:
+
+```powershell
+curl.exe -X POST "http://127.0.0.1:8001/predict" -F "file=@training_photos/plastic/plastic_001.jpg"
 ```
+
+Endpoint menerima satu gambar maksimum 10 MB dan 25 megapiksel. File kosong,
+gambar tidak valid, serta file/dimensi terlalu besar ditolak dengan status
+HTTP yang sesuai.
+
+## Integrasi Laravel
+
+Laravel memanggil `POST /predict` dengan multipart field `file`. Atur endpoint
+melalui `ML_API_URL` di root `.env` (default
+`http://127.0.0.1:8001/predict`). Kategori dan confidence selalu dihitung ulang
+di server dari gambar; nilai yang disertakan klien tidak dipercaya. Bila
+FastAPI tidak tersedia atau model gagal, Laravel mengembalikan HTTP 503 dan
+tidak menyimpan laporan ataupun foto sementara.

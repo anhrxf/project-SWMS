@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Database\Factories\UserFactory;
 use App\Notifications\VerifyEmailNotification;
+use DateTimeInterface;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -51,7 +52,14 @@ class User extends Authenticatable implements MustVerifyEmail
 
     public function sendEmailVerificationNotification(): void
     {
-        $this->notify(new VerifyEmailNotification);
+        $this->sendVerificationNotificationUntil(
+            now()->addMinutes(config('auth.verification.expire', 5))
+        );
+    }
+
+    public function sendVerificationNotificationUntil(DateTimeInterface $expiresAt): void
+    {
+        $this->notify(new VerifyEmailNotification($expiresAt));
     }
 
     public function reports(): HasMany

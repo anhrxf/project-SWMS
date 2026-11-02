@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Report;
 use App\Models\ReportStatusLog;
+use App\Services\WasteClassificationException;
 use App\Services\WasteClassifierService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -67,20 +68,20 @@ class ApiReportController extends Controller
             'latitude' => ['nullable', 'numeric', 'between:-90,90'],
             'longitude' => ['nullable', 'numeric', 'between:-180,180'],
             'location_address' => ['nullable', 'string', 'max:500'],
-            'ai_detected_category' => ['nullable', 'string'],
-            'ai_confidence' => ['nullable', 'numeric'],
         ]);
 
         $imagePath = $request->file('image')->store('reports', 'public');
-        $fullPath = storage_path('app/public/' . $imagePath);
+        $fullPath = Storage::disk('public')->path($imagePath);
 
-        $aiDetected = $validated['ai_detected_category'] ?? null;
-        $aiConfidence = $validated['ai_confidence'] ?? null;
-
-        if (!$aiDetected || !$aiConfidence) {
+        try {
             $analysis = $this->classifier->classify($fullPath);
-            $aiDetected = $analysis['category'];
-            $aiConfidence = $analysis['confidence'];
+        } catch (WasteClassificationException $exception) {
+            Storage::disk('public')->delete($imagePath);
+
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+            ], $exception->statusCode);
         }
 
         $report = Report::create([
@@ -88,8 +89,8 @@ class ApiReportController extends Controller
             'title' => $validated['title'],
             'description' => $validated['description'],
             'waste_category' => $validated['waste_category'],
-            'ai_detected_category' => $aiDetected,
-            'ai_confidence' => $aiConfidence,
+            'ai_detected_category' => $analysis['category'],
+            'ai_confidence' => $analysis['confidence'],
             'image_path' => $imagePath,
             'latitude' => $validated['latitude'] ?? null,
             'longitude' => $validated['longitude'] ?? null,

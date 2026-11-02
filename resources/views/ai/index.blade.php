@@ -12,17 +12,21 @@
         <div class="space-y-1.5 max-w-xl">
             <h2 class="text-lg font-bold text-slate-900 tracking-tight">Evaluasi Model Klasifikasi Citra Sampah</h2>
             <p class="text-xs text-slate-600 leading-relaxed">
-                Model klasifikasi citra dilatih pada 165 sampel untuk mengidentifikasi 3 kategori sampah utama: Organik, Plastik, dan Kertas. Model mengekstraksi histogram RGB, saturasi warna, dan energi gradien tepi untuk membedakan karakteristik fisik material.
+                Model PyTorch MobileNetV3 Small mengklasifikasikan sampah organik, plastik, dan kertas. Prediksi ini membantu penyortiran awal, bukan menggantikan pemeriksaan petugas.
             </p>
         </div>
 
         <div class="grid grid-cols-2 gap-3 text-center w-full md:w-auto flex-shrink-0">
             <div class="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
-                <div class="text-xl font-bold text-slate-900">100%</div>
+                <div class="text-xl font-bold text-slate-900">
+                    {{ $evaluation ? number_format($evaluation['test_accuracy'] * 100, 2) . '%' : '—' }}
+                </div>
                 <div class="text-[11px] text-slate-500">Akurasi pengujian</div>
             </div>
             <div class="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
-                <div class="text-xl font-bold text-slate-900">165</div>
+                <div class="text-xl font-bold text-slate-900">
+                    {{ $evaluation ? array_sum($evaluation['unique_images_per_class']) : '—' }}
+                </div>
                 <div class="text-[11px] text-slate-500">Total dataset sampel</div>
             </div>
         </div>
@@ -230,68 +234,107 @@
 
     <!-- Machine Learning Performance & Metrics Panel -->
     <div class="p-6 rounded-2xl bg-white border border-slate-200/80 shadow-xs space-y-4">
-        <div>
-            <h3 class="text-sm font-bold text-slate-900">Hasil Evaluasi Model (Holdout Test Set)</h3>
-            <p class="text-xs text-slate-500 mt-0.5">
-                Evaluasi model pada 33 sampel data uji terpisah (20% holdout) setelah pelatihan pada 132 sampel:
-            </p>
-        </div>
+        @if($evaluation)
+            @php
+                $classLabels = [
+                    'organic' => 'Sampah Organik',
+                    'plastic' => 'Sampah Plastik',
+                    'paper' => 'Sampah Kertas',
+                ];
+                $report = $evaluation['classification_report'];
+                $macro = $report['macro avg'];
+                $splitSizes = $evaluation['split_sizes'];
+            @endphp
 
-        <div class="overflow-x-auto">
-            <table class="w-full text-left text-xs border border-slate-200 rounded-lg">
-                <thead class="bg-slate-50 text-slate-600 font-medium border-b border-slate-200">
-                    <tr>
-                        <th class="px-4 py-2.5">Kategori</th>
-                        <th class="px-4 py-2.5">Precision</th>
-                        <th class="px-4 py-2.5">Recall</th>
-                        <th class="px-4 py-2.5">F1-Score</th>
-                        <th class="px-4 py-2.5">Jumlah Sampel Uji</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-100 text-slate-700">
-                    <tr>
-                        <td class="px-4 py-2.5 font-semibold text-slate-900">Sampah Organik</td>
-                        <td class="px-4 py-2.5">100.00%</td>
-                        <td class="px-4 py-2.5">100.00%</td>
-                        <td class="px-4 py-2.5">100.00%</td>
-                        <td class="px-4 py-2.5">11</td>
-                    </tr>
-                    <tr>
-                        <td class="px-4 py-2.5 font-semibold text-slate-900">Sampah Plastik</td>
-                        <td class="px-4 py-2.5">100.00%</td>
-                        <td class="px-4 py-2.5">100.00%</td>
-                        <td class="px-4 py-2.5">100.00%</td>
-                        <td class="px-4 py-2.5">11</td>
-                    </tr>
-                    <tr>
-                        <td class="px-4 py-2.5 font-semibold text-slate-900">Sampah Kertas</td>
-                        <td class="px-4 py-2.5">100.00%</td>
-                        <td class="px-4 py-2.5">100.00%</td>
-                        <td class="px-4 py-2.5">100.00%</td>
-                        <td class="px-4 py-2.5">11</td>
-                    </tr>
-                </tbody>
-                <tfoot class="bg-slate-50/70 border-t border-slate-200 font-semibold text-slate-900">
-                    <tr>
-                        <td class="px-4 py-2.5">Rata-rata Makro / Akurasi Keseluruhan</td>
-                        <td class="px-4 py-2.5">100.00%</td>
-                        <td class="px-4 py-2.5">100.00%</td>
-                        <td class="px-4 py-2.5">100.00%</td>
-                        <td class="px-4 py-2.5">33 Sampel</td>
-                    </tr>
-                </tfoot>
-            </table>
-        </div>
-
-        <div class="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs flex flex-col sm:flex-row items-center justify-between gap-3">
             <div>
-                <span class="font-bold text-slate-900 block">Target akurasi minimal 80% terpenuhi</span>
-                <span class="text-slate-500 text-[11px]">Akurasi pengujian mencapai 100% pada data uji terpisah.</span>
+                <h3 class="text-sm font-bold text-slate-900">Hasil Evaluasi Model (Test Set)</h3>
+                <p class="text-xs text-slate-500 mt-0.5">
+                    Split stratified: {{ $splitSizes['train'] }} train, {{ $splitSizes['validation'] }} validation, dan {{ $splitSizes['test'] }} test. Random seed {{ $evaluation['random_seed'] }}.
+                </p>
             </div>
-            <a href="{{ route('docs.api') }}" class="px-3 py-1.5 rounded-lg bg-slate-900 text-white font-medium hover:bg-slate-800 transition text-xs">
-                Dokumentasi API
-            </a>
+
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs border border-slate-200 rounded-lg">
+                    <thead class="bg-slate-50 text-slate-600 font-medium border-b border-slate-200">
+                        <tr>
+                            <th class="px-4 py-2.5">Kategori</th>
+                            <th class="px-4 py-2.5">Precision</th>
+                            <th class="px-4 py-2.5">Recall</th>
+                            <th class="px-4 py-2.5">F1-Score</th>
+                            <th class="px-4 py-2.5">Jumlah Sampel</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100 text-slate-700">
+                        @foreach($evaluation['classes'] as $class)
+                            @php($metrics = $report[$class])
+                            <tr>
+                                <td class="px-4 py-2.5 font-semibold text-slate-900">{{ $classLabels[$class] ?? $class }}</td>
+                                <td class="px-4 py-2.5">{{ number_format($metrics['precision'] * 100, 2) }}%</td>
+                                <td class="px-4 py-2.5">{{ number_format($metrics['recall'] * 100, 2) }}%</td>
+                                <td class="px-4 py-2.5">{{ number_format($metrics['f1-score'] * 100, 2) }}%</td>
+                                <td class="px-4 py-2.5">{{ (int) $metrics['support'] }}</td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                    <tfoot class="bg-slate-50/70 border-t border-slate-200 font-semibold text-slate-900">
+                        <tr>
+                            <td class="px-4 py-2.5">Macro average / akurasi</td>
+                            <td class="px-4 py-2.5">{{ number_format($macro['precision'] * 100, 2) }}%</td>
+                            <td class="px-4 py-2.5">{{ number_format($macro['recall'] * 100, 2) }}%</td>
+                            <td class="px-4 py-2.5">{{ number_format($macro['f1-score'] * 100, 2) }}%</td>
+                            <td class="px-4 py-2.5">{{ $splitSizes['test'] }} · {{ number_format($evaluation['test_accuracy'] * 100, 2) }}%</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+
+            <div class="space-y-2">
+                <h4 class="text-xs font-bold text-slate-900">Confusion matrix</h4>
+                <p class="text-[11px] text-slate-500">Baris menunjukkan label sebenarnya; kolom menunjukkan prediksi model.</p>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-center text-xs border border-slate-200 rounded-lg">
+                        <thead class="bg-slate-50 text-slate-600">
+                            <tr>
+                                <th class="px-3 py-2 text-left">Aktual \ Prediksi</th>
+                                @foreach($evaluation['classes'] as $class)
+                                    <th class="px-3 py-2">{{ $classLabels[$class] ?? $class }}</th>
+                                @endforeach
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            @foreach($evaluation['classes'] as $rowIndex => $class)
+                                <tr>
+                                    <th class="px-3 py-2 text-left font-semibold">{{ $classLabels[$class] ?? $class }}</th>
+                                    @foreach($evaluation['confusion_matrix'][$rowIndex] as $count)
+                                        <td class="px-3 py-2">{{ $count }}</td>
+                                    @endforeach
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div>
+                    <span class="font-bold text-slate-900 block">
+                        Target 80% {{ $evaluation['target_accuracy_met'] ? 'terpenuhi' : 'belum terpenuhi' }}
+                    </span>
+                    <span class="text-slate-500 text-[11px]">
+                        Akurasi test {{ number_format($evaluation['test_accuracy'] * 100, 2) }}% dari {{ $splitSizes['test'] }} foto. Dataset kecil, hasil bukan jaminan performa pada kondisi nyata.
+                    </span>
+                </div>
+                <a href="{{ route('docs.api') }}" class="px-3 py-1.5 rounded-lg bg-slate-900 text-white font-medium hover:bg-slate-800 transition text-xs">
+                    Dokumentasi API
+                </a>
+            </div>
+        @else
+            <div>
+                <h3 class="text-sm font-bold text-slate-900">Hasil Evaluasi Model</h3>
+                <p class="text-xs text-slate-500 mt-1">Belum ada hasil evaluasi. Jalankan training dari folder <code>machine-learning</code> untuk membuat report dan confusion matrix.</p>
+            </div>
         </div>
+        @endif
     </div>
 
 </div>

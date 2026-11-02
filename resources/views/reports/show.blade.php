@@ -118,20 +118,32 @@
                         <h3 class="text-sm font-bold text-slate-900">Klasifikasi Citra Sampah</h3>
                         <p class="text-[11px] text-slate-500">Hasil analisis model visual terhadap foto laporan</p>
                     </div>
-                    <span class="px-2.5 py-0.5 rounded text-xs font-semibold bg-emerald-100 text-emerald-800">
-                        {{ $report->ai_confidence ? $report->ai_confidence . '% keyakinan' : 'Otomatis' }}
-                    </span>
+                    @if($report->ai_confidence !== null)
+                        <span class="px-2.5 py-0.5 rounded text-xs font-semibold bg-emerald-100 text-emerald-800">
+                            {{ number_format((float) $report->ai_confidence, 2) }}% keyakinan
+                        </span>
+                    @else
+                        <span class="px-2.5 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-600">
+                            Belum dianalisis
+                        </span>
+                    @endif
                 </div>
 
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                     <div class="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
-                        <span class="text-[11px] text-slate-500">Kategori hasil deteksi:</span>
+                        <span class="text-[11px] text-slate-500">
+                            {{ $report->ai_detected_category ? 'Kategori hasil deteksi:' : 'Kategori laporan:' }}
+                        </span>
                         <div class="text-sm font-bold text-slate-900 mt-0.5 capitalize">
                             {{ $report->ai_detected_category ?: $report->waste_category }}
                         </div>
-                        <div class="w-full bg-slate-200 rounded-full h-1.5 mt-2 overflow-hidden">
-                            <div class="bg-emerald-600 h-1.5 rounded-full" style="width: {{ $report->ai_confidence ?: 85 }}%"></div>
-                        </div>
+                        @if($report->ai_confidence !== null)
+                            <div class="w-full bg-slate-200 rounded-full h-1.5 mt-2 overflow-hidden" role="progressbar" aria-label="Keyakinan model" aria-valuenow="{{ $report->ai_confidence }}" aria-valuemin="0" aria-valuemax="100">
+                                <div class="bg-emerald-600 h-1.5 rounded-full" style="width: {{ $report->ai_confidence }}%"></div>
+                            </div>
+                        @else
+                            <p class="text-[11px] text-slate-500 mt-2">Hasil model tidak tersedia untuk laporan ini.</p>
+                        @endif
                     </div>
 
                     <div class="p-3.5 rounded-xl bg-slate-50 border border-slate-200">

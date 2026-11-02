@@ -5,6 +5,12 @@ Versi: `v1`
 Base URL lokal: `http://localhost:8000/api/v1`
 Format respons: JSON
 
+Untuk klien Flutter Web, konfigurasi origin web secara eksplisit di
+`SWMS_CORS_ALLOWED_ORIGINS` pada `.env`. Nilai default mengizinkan origin lokal
+`localhost`/`127.0.0.1` pada port `5000` dan `8080`. Untuk deployment, tambahkan origin
+HTTPS aplikasi web yang tepat; jangan memakai wildcard. Klien Android native tidak
+terpengaruh oleh CORS.
+
 ## Autentikasi dan format request
 
 Endpoint terautentikasi menggunakan Laravel Sanctum personal access token. Kirim token pada setiap request terautentikasi:
@@ -24,7 +30,7 @@ Token dikembalikan oleh register dan login. Gunakan `application/json` untuk req
 - Email wajib valid dan unik.
 - Nomor HP wajib, unik, dan memiliki panjang 9–20 karakter.
 - `address` opsional.
-- Aplikasi mengirim tautan verifikasi dengan masa berlaku 60 menit.
+- Aplikasi mengirim tautan verifikasi dengan masa berlaku 5 menit.
 - Respons menyertakan token akses, `email_verified: false`, dan `verification_url`.
 - Tautan dapat dibuka tanpa login karena URL bertanda tangan dan kedaluwarsa.
 - Request API laporan ditolak dengan HTTP 403 sampai email diverifikasi.
@@ -42,7 +48,7 @@ Request JSON:
 }
 ```
 
-Respons mengandung `success`, `message`, serta `data.user`, `data.token`, `data.token_type` (`Bearer`), `data.email_verified`, dan `data.verification_url`.
+Respons mengandung `success`, `message`, `email_sent`, `verification_expires_at`, serta `data.user`, `data.token`, `data.token_type` (`Bearer`), `data.email_verified`, dan `data.verification_url`. Tautan berlaku 5 menit; `verification_expires_at` adalah waktu kedaluwarsa dalam ISO 8601. Jika `MAIL_MAILER=log`, `email_sent` bernilai `false`: pesan hanya ditulis ke log dan tidak masuk inbox. Respons register tetap berhasil karena akun sudah dibuat; atur SMTP lalu minta tautan baru.
 
 ### Login
 
@@ -60,7 +66,7 @@ Request JSON:
 ```
 
 Respons mengandung `success`, `message`, serta `data.user`, `data.token`, `data.token_type`, dan `data.email_verified`. Untuk akun belum diverifikasi, login tetap menghasilkan token agar klien dapat mengambil profil atau meminta tautan baru; akses ke API laporan tetap ditolak.
-Kredensial tidak cocok menghasilkan `401 Unauthorized`.
+Kredensial tidak cocok menghasilkan `401 Unauthorized` dengan pesan `Alamat email salah.`.
 
 ### Profil
 
@@ -77,8 +83,9 @@ Kredensial tidak cocok menghasilkan `401 Unauthorized`.
 - `POST /auth/email/verification-notification` — terautentikasi; dibatasi enam request per menit.
 - Mengirim notifikasi verifikasi baru untuk akun belum terverifikasi; sukses `202 Accepted`.
 - Jika sudah terverifikasi, sukses `200 OK` dengan pesan bahwa alamat telah diverifikasi.
+- Jika mailer masih `log`, respons `503 Service Unavailable` dengan `email_sent: false`; email hanya masuk ke `storage/logs/laravel.log`.
 
-Link verifikasi dikirim melalui email dan juga tersedia sebagai `verification_url` pada respons register. Link berlaku 60 menit dan memiliki signature. Buka URL tersebut di browser; login tidak diperlukan.
+Link verifikasi dikirim melalui email dan juga tersedia sebagai `verification_url` pada respons register. Link berlaku 5 menit dan memiliki signature. Endpoint kirim ulang mengembalikan `verification_expires_at` untuk waktu kedaluwarsa link terbaru. Buka URL tersebut di browser; login tidak diperlukan.
 
 Mailer lokal pada `.env.example` menggunakan driver `log`; email verifikasi ditulis ke
 `storage/logs/laravel.log`, bukan dikirim ke inbox. Atur SMTP dan `APP_URL` publik untuk
@@ -91,7 +98,7 @@ bukan kata sandi akun Google.
 
 Publik, tidak memerlukan token. Request `multipart/form-data` berisi field wajib `image` (JPEG, PNG, JPG, atau WEBP; maksimum 10 MB).
 
-Berhasil menghasilkan `200 OK` dengan `success`, `message`, dan `data`. Data berisi `source`, `category`, `confidence`, `label`, `breakdown`, dan `recommendation` (`type`, `action`, `color_code`, `bin`). Kategori yang dikembalikan classifier: `organic`, `plastic`, atau `paper`.
+Berhasil menghasilkan `200 OK` dengan `success`, `message`, dan `data`. Data berisi `source`, `category`, `confidence`, `label`, `breakdown`, dan `recommendation` (`type`, `action`, `color_code`, `bin`). Kategori berasal dari model PyTorch yang dilayani FastAPI: `organic`, `plastic`, atau `paper`. Jika layanan/model AI tidak tersedia, endpoint mengembalikan `503 Service Unavailable`; gambar yang tidak dapat diproses mengembalikan `422 Unprocessable Content`.
 
 ## Laporan
 
@@ -124,10 +131,8 @@ Terautentikasi sebagai warga dengan email terverifikasi; akun admin atau akun be
 | `latitude` | Opsional, numerik antara -90 dan 90 |
 | `longitude` | Opsional, numerik antara -180 dan 180 |
 | `location_address` | Opsional, string, maksimum 500 karakter |
-| `ai_detected_category` | Opsional, string |
-| `ai_confidence` | Opsional, numerik |
 
-Sukses menghasilkan `201 Created` dengan laporan pada `data`, termasuk relasi `user` dan `status_logs`. Status awal laporan adalah `pending`.
+Kategori dan confidence AI selalu dihitung ulang oleh server dari file yang diunggah; nilai prediksi yang dikirim klien tidak digunakan. Sukses menghasilkan `201 Created` dengan laporan pada `data`, termasuk relasi `user` dan `status_logs`. Status awal laporan adalah `pending`. Jika gambar tidak dapat diproses model, respons `422`; jika layanan/model tidak tersedia, respons `503`. Dalam kedua kasus, laporan tidak disimpan.
 
 ### Detail laporan — `GET /reports/{report}`
 
@@ -164,5 +169,6 @@ Khusus admin dengan email terverifikasi. Request JSON:
 | `403` | Akses ditolak karena role atau kepemilikan laporan. |
 | `404` | Laporan tidak ditemukan. |
 | `422` | Validasi gagal; Laravel mengembalikan `message` dan detail per-field di `errors`. |
+| `503` | Layanan klasifikasi AI tidak tersedia atau mengembalikan respons yang tidak dapat digunakan. |
 
 Request API harus menyertakan `Accept: application/json` agar error validasi dikembalikan sebagai JSON.
