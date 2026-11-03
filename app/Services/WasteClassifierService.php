@@ -11,7 +11,7 @@ class WasteClassifierService
     /**
      * Classify an uploaded image using the trained Python model.
      *
-     * @return array{source: string, category: string, confidence: float, label: string, breakdown: array<string, float>, recommendation: array}
+     * @return array{source: string, status: string, message: string, category: ?string, confidence: float, label: ?string, breakdown: array<string, float>, recommendation: ?array}
      */
     public function classify(string $imagePath): array
     {
@@ -62,20 +62,30 @@ class WasteClassifierService
         }
 
         $data = $response->json();
+        $status = is_array($data) ? ($data['status'] ?? null) : null;
         $category = is_array($data) ? ($data['category'] ?? null) : null;
         $confidence = is_array($data) ? ($data['confidence'] ?? null) : null;
         $breakdown = is_array($data) ? ($data['breakdown'] ?? null) : null;
         $categories = ['organic', 'plastic', 'paper'];
 
         if (
-            !is_string($category)
-            || !in_array($category, $categories, true)
+            !in_array($status, ['classified', 'uncertain'], true)
             || !is_numeric($confidence)
             || (float) $confidence < 0
             || (float) $confidence > 100
             || !is_array($breakdown)
+            || !is_string($data['message'] ?? null)
         ) {
             Log::error('Waste classification service returned an invalid prediction.');
+
+            throw new WasteClassificationException('Layanan klasifikasi AI mengembalikan hasil yang tidak valid.');
+        }
+
+        if (
+            ($status === 'classified' && (!is_string($category) || !in_array($category, $categories, true)))
+            || ($status === 'uncertain' && $category !== null)
+        ) {
+            Log::error('Waste classification service returned an invalid classification status.');
 
             throw new WasteClassificationException('Layanan klasifikasi AI mengembalikan hasil yang tidak valid.');
         }
@@ -93,11 +103,13 @@ class WasteClassifierService
 
         return [
             'source' => 'pytorch_fastapi',
+            'status' => $status,
+            'message' => $data['message'],
             'category' => $category,
             'confidence' => (float) $confidence,
-            'label' => $this->getCategoryLabel($category),
+            'label' => $category ? $this->getCategoryLabel($category) : null,
             'breakdown' => $normalizedBreakdown,
-            'recommendation' => $this->getRecommendation($category),
+            'recommendation' => $category ? $this->getRecommendation($category) : null,
         ];
     }
 

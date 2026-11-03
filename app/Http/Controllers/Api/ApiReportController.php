@@ -89,8 +89,8 @@ class ApiReportController extends Controller
             'title' => $validated['title'],
             'description' => $validated['description'],
             'waste_category' => $validated['waste_category'],
-            'ai_detected_category' => $analysis['category'],
-            'ai_confidence' => $analysis['confidence'],
+            'ai_detected_category' => $analysis['status'] === 'classified' ? $analysis['category'] : null,
+            'ai_confidence' => $analysis['status'] === 'classified' ? $analysis['confidence'] : null,
             'image_path' => $imagePath,
             'latitude' => $validated['latitude'] ?? null,
             'longitude' => $validated['longitude'] ?? null,
@@ -108,7 +108,10 @@ class ApiReportController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Laporan berhasil dibuat.',
+            'message' => $analysis['status'] === 'uncertain'
+                ? 'Laporan berhasil dibuat. AI tidak cukup yakin; kategori laporan mengikuti pilihan Anda.'
+                : 'Laporan berhasil dibuat.',
+            'ai_prediction_status' => $analysis['status'],
             'data' => $report->load(['user:id,name,email', 'statusLogs']),
         ], 201);
     }

@@ -12,7 +12,7 @@
         <div class="space-y-1.5 max-w-xl">
             <h2 class="text-lg font-bold text-slate-900 tracking-tight">Evaluasi Model Klasifikasi Citra Sampah</h2>
             <p class="text-xs text-slate-600 leading-relaxed">
-                Model PyTorch MobileNetV3 Small mengklasifikasikan sampah organik, plastik, dan kertas. Prediksi ini membantu penyortiran awal, bukan menggantikan pemeriksaan petugas.
+                Model PyTorch MobileNetV3 Small hanya membedakan sampah organik, plastik, dan kertas. Prediksi diterima bila dua tampilan sepakat dan confidence minimal 70%; selain itu AI tidak menetapkan kelas. Dataset kecil, sehingga hasil bukan jaminan untuk kondisi nyata atau objek di luar tiga kelas.
             </p>
         </div>
 
@@ -29,6 +29,16 @@
                 </div>
                 <div class="text-[11px] text-slate-500">Total dataset sampel</div>
             </div>
+            @if($evaluation && isset($evaluation['selective_classification']))
+                <div class="col-span-2 p-3.5 rounded-xl bg-amber-50 border border-amber-200">
+                    <div class="text-sm font-bold text-amber-900">
+                        {{ $evaluation['selective_classification']['accepted'] }}/{{ $evaluation['split_sizes']['test'] }}
+                        foto diterima ·
+                        {{ number_format($evaluation['selective_classification']['coverage'] * 100, 1) }}% coverage
+                    </div>
+                    <div class="text-[11px] text-amber-800">Ambang confidence 70% dan dua tampilan harus sepakat; foto lain perlu kategori manual.</div>
+                </div>
+            @endif
         </div>
     </div>
 
@@ -112,7 +122,19 @@
                 </div>
 
                 <!-- Idle State -->
-                <div x-show="!loading && !result.category" class="py-16 text-center text-slate-400 space-y-1">
+                <div x-show="!loading && error" class="py-10 text-center text-rose-700 space-y-2" role="alert" x-cloak>
+                    <i class="fa-solid fa-triangle-exclamation text-xl"></i>
+                    <p class="text-xs font-semibold">Deteksi AI gagal.</p>
+                    <p class="text-[11px]" x-text="error"></p>
+                </div>
+
+                <div x-show="!loading && uncertain" class="py-10 text-center text-amber-800 space-y-2" role="status" x-cloak>
+                    <i class="fa-solid fa-circle-question text-xl"></i>
+                    <p class="text-xs font-semibold">AI belum cukup yakin untuk menetapkan kategori.</p>
+                    <p class="text-[11px]" x-text="message"></p>
+                </div>
+
+                <div x-show="!loading && !result.category && !error && !uncertain" class="py-16 text-center text-slate-400 space-y-1">
                     <p class="text-xs">Pilih atau unggah gambar untuk memulai pengujian.</p>
                 </div>
 
@@ -345,6 +367,9 @@
         return {
             imagePreview: null,
             loading: false,
+            error: '',
+            uncertain: false,
+            message: '',
             result: {
                 category: '',
                 confidence: null,
@@ -369,6 +394,17 @@
 
             async classifyImage(file) {
                 this.loading = true;
+                this.error = '';
+                this.uncertain = false;
+                this.message = '';
+                this.result = {
+                    category: '',
+                    confidence: null,
+                    label: '',
+                    breakdown: null,
+                    recommendation: null,
+                    source: ''
+                };
                 const formData = new FormData();
                 formData.append('image', file);
 
@@ -384,11 +420,21 @@
                     });
 
                     const json = await res.json();
-                    if (json.success && json.data) {
-                        this.result = json.data;
+                    if (!res.ok || !json.success || !json.data) {
+                        this.error = json.message || 'Layanan AI tidak dapat memproses gambar.';
+                        return;
                     }
+
+                    if (json.data.status === 'uncertain') {
+                        this.uncertain = true;
+                        this.message = json.message || 'Coba gunakan foto yang lebih jelas.';
+                        return;
+                    }
+
+                    this.result = json.data;
                 } catch (err) {
                     console.error('Classification error:', err);
+                    this.error = 'Tidak dapat terhubung ke layanan AI. Pastikan layanan AI berjalan, lalu coba lagi.';
                 } finally {
                     this.loading = false;
                 }

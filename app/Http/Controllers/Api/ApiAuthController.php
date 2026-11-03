@@ -40,16 +40,25 @@ class ApiAuthController extends Controller
         ]);
 
         $token = $user->createToken('swms_mobile_token')->plainTextToken;
-        $expiresAt = now()->addMinutes(config('auth.verification.expire', 5));
-        $user->sendVerificationNotificationUntil($expiresAt);
+        $verificationRequired = (bool) config('auth.email_verification_enabled');
+        $expiresAt = $verificationRequired
+            ? now()->addMinutes(config('auth.verification.expire', 5))
+            : null;
+
+        if ($expiresAt) {
+            $user->sendVerificationNotificationUntil($expiresAt);
+        }
 
         return response()->json([
             'success' => true,
-            'message' => config('mail.default') === 'log'
-                ? 'Registrasi berhasil, tetapi mailer log tidak mengirim email ke inbox. Atur SMTP untuk pengiriman nyata.'
-                : 'Registrasi berhasil. Periksa inbox untuk tautan verifikasi.',
-            'email_sent' => config('mail.default') !== 'log',
-            'verification_expires_at' => $expiresAt->toIso8601String(),
+            'message' => !$verificationRequired
+                ? 'Registrasi berhasil. Verifikasi email sementara dinonaktifkan.'
+                : (config('mail.default') === 'log'
+                    ? 'Registrasi berhasil, tetapi mailer log tidak mengirim email ke inbox. Atur SMTP untuk pengiriman nyata.'
+                    : 'Registrasi berhasil. Periksa inbox untuk tautan verifikasi.'),
+            'email_sent' => $verificationRequired && config('mail.default') !== 'log',
+            'email_verification_required' => $verificationRequired,
+            'verification_expires_at' => $expiresAt?->toIso8601String(),
             'data' => [
                 'user' => [
                     'id' => $user->id,
@@ -62,11 +71,13 @@ class ApiAuthController extends Controller
                 'token' => $token,
                 'token_type' => 'Bearer',
                 'email_verified' => false,
-                'verification_url' => URL::temporarySignedRoute(
-                    'verification.verify',
-                    $expiresAt,
-                    ['id' => $user->id, 'hash' => sha1($user->getEmailForVerification())]
-                ),
+                'verification_url' => $expiresAt
+                    ? URL::temporarySignedRoute(
+                        'verification.verify',
+                        $expiresAt,
+                        ['id' => $user->id, 'hash' => sha1($user->getEmailForVerification())]
+                    )
+                    : null,
             ],
         ], 201);
     }
@@ -93,9 +104,11 @@ class ApiAuthController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => $user->hasVerifiedEmail()
-                ? 'Login berhasil.'
-                : 'Login berhasil, tetapi verifikasi email diperlukan sebelum menggunakan laporan.',
+            'message' => !config('auth.email_verification_enabled')
+                ? 'Login berhasil. Verifikasi email sementara dinonaktifkan.'
+                : ($user->hasVerifiedEmail()
+                    ? 'Login berhasil.'
+                    : 'Login berhasil, tetapi verifikasi email diperlukan sebelum menggunakan laporan.'),
             'data' => [
                 'user' => [
                     'id' => $user->id,
@@ -108,6 +121,7 @@ class ApiAuthController extends Controller
                 'token' => $token,
                 'token_type' => 'Bearer',
                 'email_verified' => $user->hasVerifiedEmail(),
+                'email_verification_required' => (bool) config('auth.email_verification_enabled'),
             ],
         ]);
     }
@@ -125,6 +139,15 @@ class ApiAuthController extends Controller
     public function resendVerification(Request $request): JsonResponse
     {
         $user = $request->user();
+
+        if (!config('auth.email_verification_enabled')) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Verifikasi email sementara dinonaktifkan.',
+                'email_sent' => false,
+                'email_verification_required' => false,
+            ]);
+        }
 
         if ($user->hasVerifiedEmail()) {
             return response()->json([
@@ -159,6 +182,7 @@ class ApiAuthController extends Controller
                 'phone' => $user->phone,
                 'address' => $user->address,
                 'email_verified' => $user->hasVerifiedEmail(),
+                'email_verification_required' => (bool) config('auth.email_verification_enabled'),
                 'email_verified_at' => $user->email_verified_at,
                 'created_at' => $user->created_at,
             ],

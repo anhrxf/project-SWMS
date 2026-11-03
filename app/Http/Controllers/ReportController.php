@@ -136,8 +136,8 @@ class ReportController extends Controller
             'title' => $validated['title'],
             'description' => $validated['description'],
             'waste_category' => $validated['waste_category'],
-            'ai_detected_category' => $analysis['category'],
-            'ai_confidence' => $analysis['confidence'],
+            'ai_detected_category' => $analysis['status'] === 'classified' ? $analysis['category'] : null,
+            'ai_confidence' => $analysis['status'] === 'classified' ? $analysis['confidence'] : null,
             'image_path' => $imagePath,
             'latitude' => $validated['latitude'] ?? null,
             'longitude' => $validated['longitude'] ?? null,
@@ -155,7 +155,11 @@ class ReportController extends Controller
         ]);
 
         return redirect()->route('reports.show', $report)
-            ->with('success', 'Laporan sampah berhasil dikirim! Tim operasional akan segera menindaklanjuti.')
+            ->with(
+                'success',
+                'Laporan sampah berhasil dikirim! Tim operasional akan segera menindaklanjuti.'
+                . ($analysis['status'] === 'uncertain' ? ' AI tidak cukup yakin; kategori laporan mengikuti pilihan Anda.' : '')
+            )
             ->with('clear_report_draft', true);
     }
 

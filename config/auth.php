@@ -73,6 +73,8 @@ return [
         // ],
     ],
 
+    'email_verification_enabled' => env('EMAIL_VERIFICATION_ENABLED', false),
+
     'verification' => [
         'expire' => 5,
     ],

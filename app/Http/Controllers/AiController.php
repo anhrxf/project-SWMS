@@ -74,7 +74,7 @@ class AiController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Analisis gambar berhasil dilakukan.',
+            'message' => $result['message'],
             'data' => $result,
         ]);
     }

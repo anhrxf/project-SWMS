@@ -9,7 +9,7 @@
         <p class="text-xs text-slate-500 mt-1">Masukkan alamat email dan kata sandi terdaftar untuk melanjutkan.</p>
     </div>
 
-    <form method="POST" action="{{ route('login.post') }}" class="space-y-4">
+    <form method="POST" action="{{ route('login.post') }}" class="space-y-4" autocomplete="off">
         @csrf
 
         <div>
@@ -19,11 +19,15 @@
                     <i class="fa-solid fa-envelope text-xs"></i>
                 </span>
                 <input id="email" 
-                       name="email" 
-                       type="email" 
-                       autocomplete="email" 
+                       name="login_email"
+                       type="text"
+                       inputmode="email"
+                       autocomplete="new-password"
+                       autocapitalize="none"
+                       autocorrect="off"
+                       spellcheck="false"
                        required 
-                       value="{{ old('email') }}"
+                       value="{{ request()->cookie('last_login_email', '') }}"
                        class="w-full pl-10 pr-4 py-2.5 rounded-xl border {{ $errors->has('email') ? 'border-rose-400 focus:ring-rose-200' : 'border-slate-200 focus:ring-emerald-200' }} text-xs font-medium focus:outline-none focus:ring-4 focus:border-emerald-500 transition" 
                        placeholder="nama@email.com">
             </div>
@@ -43,7 +47,7 @@
                 <input id="password" 
                        name="password" 
                        :type="show ? 'text' : 'password'" 
-                       autocomplete="current-password" 
+                       autocomplete="new-password"
                        required 
                        class="w-full pl-10 pr-10 py-2.5 rounded-xl border {{ $errors->has('password') ? 'border-rose-400 focus:ring-rose-200' : 'border-slate-200 focus:ring-emerald-200' }} text-xs font-medium focus:outline-none focus:ring-4 focus:border-emerald-500 transition" 
                        placeholder="••••••••">

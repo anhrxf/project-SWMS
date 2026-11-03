@@ -22,6 +22,13 @@
   "target_accuracy": 0.8,
   "target_accuracy_met": true,
   "test_accuracy": 0.9130434782608695,
+  "selective_classification": {
+    "minimum_confidence": 0.7,
+    "requires_horizontal_flip_agreement": true,
+    "accepted": 16,
+    "coverage": 0.6956521739130435,
+    "accuracy_when_accepted": 1.0
+  },
   "classification_report": {
     "organic": {
       "precision": 1.0,

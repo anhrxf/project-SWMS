@@ -27,7 +27,7 @@ Route::prefix('v1')->group(function () {
         Route::post('/auth/email/verification-notification', [ApiAuthController::class, 'resendVerification'])
             ->middleware('throttle:6,1');
 
-        Route::middleware('verified')->group(function () {
+        Route::middleware('email.verified')->group(function () {
             // Reports API
             Route::get('/reports', [ApiReportController::class, 'index']);
             Route::post('/reports', [ApiReportController::class, 'store']);

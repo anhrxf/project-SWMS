@@ -25,6 +25,13 @@ python -m pip install -r requirements.txt
 python download_training_photos.py
 ```
 
+Model hanya mengenali tiga kelas tersebut. Saat prediksi, probabilitas dari foto
+asli dan foto yang dibalik horizontal dirata-ratakan. Kategori hanya ditetapkan
+jika kedua tampilan sepakat dan skor tertinggi minimal 70%; jika tidak, hasilnya
+`uncertain` tanpa kategori atau rekomendasi otomatis. Skor softmax bukan
+probabilitas terkalibrasi bahwa prediksi pasti benar. Aturan ini mengurangi
+prediksi meragukan, tetapi tidak menjamin pengenalan objek di luar tiga kelas.
+
 ## Training dan evaluasi
 
 Jalankan dari folder `machine-learning`:
@@ -45,7 +52,8 @@ Hasil ditulis ke `artifacts/`:
 
 - `model.pt`: checkpoint PyTorch dan metadata kelas.
 - `evaluation.json`: akurasi test, classification report, confusion matrix,
-  ukuran split, lisensi dataset, dan status target 80%.
+  ukuran split, lisensi dataset, status target 80%, dan coverage/akurasi selective
+  classification.
 - `confusion_matrix.png`: visualisasi confusion matrix test.
 - `training_history.json`: loss dan akurasi train/validation tiap epoch.
 - `test_predictions.csv`: label aktual dan prediksi per foto pada test split.
@@ -54,7 +62,10 @@ Hasil ditulis ke `artifacts/`:
 
 Training terakhir (seed 42, checkpoint terbaik epoch 1) menghasilkan akurasi
 test **91,30%** pada 23 foto: tujuh organic, delapan paper, dan delapan plastic.
-Macro precision, recall, dan F1-score masing-masing **91,67%**. Matriksnya
+Selective classification menerapkan ambang 70% dan kesepakatan dua tampilan.
+Evaluasi awal pada checkpoint ini menerima 16 dari 23 foto uji; 16 foto yang
+diterima benar. Macro precision, recall, dan F1-score keseluruhan masing-masing
+**91,67%**. Matriksnya
 (urutan baris/kolom: organic, paper, plastic):
 
 ```text

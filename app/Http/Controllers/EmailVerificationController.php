@@ -13,6 +13,11 @@ class EmailVerificationController extends Controller
 {
     public function notice(Request $request): View|RedirectResponse
     {
+        if (!config('auth.email_verification_enabled')) {
+            return redirect()->route('dashboard')
+                ->with('info', 'Verifikasi email sementara dinonaktifkan.');
+        }
+
         if (Auth::user()->hasVerifiedEmail()) {
             return redirect()->route('dashboard');
         }
@@ -50,6 +55,11 @@ class EmailVerificationController extends Controller
     public function resend(Request $request): RedirectResponse
     {
         $user = $request->user();
+
+        if (!config('auth.email_verification_enabled')) {
+            return redirect()->route('dashboard')
+                ->with('info', 'Verifikasi email sementara dinonaktifkan.');
+        }
 
         if ($user->hasVerifiedEmail()) {
             return redirect()->route('dashboard');

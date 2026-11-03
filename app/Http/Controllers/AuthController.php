@@ -22,6 +22,10 @@ class AuthController extends Controller
 
     public function login(Request $request): RedirectResponse
     {
+        $request->merge([
+            'email' => $request->input('login_email', $request->input('email')),
+        ]);
+
         $credentials = $request->validate([
             'email' => ['required', 'string', 'email'],
             'password' => ['required', 'string'],
@@ -32,24 +36,37 @@ class AuthController extends Controller
         ]);
 
         $remember = $request->boolean('remember');
+        $lastLoginEmailCookie = cookie(
+            'last_login_email',
+            $credentials['email'],
+            60 * 24 * 365,
+            '/',
+            null,
+            $request->isSecure(),
+            true,
+            false,
+            'lax',
+        );
 
         if (Auth::attempt($credentials, $remember)) {
             $request->session()->regenerate();
             
             $user = Auth::user();
 
-            if (!$user->hasVerifiedEmail()) {
-                return redirect()->route('verification.notice')
+            if (config('auth.email_verification_enabled') && !$user->hasVerifiedEmail()) {
+                $response = redirect()->route('verification.notice')
                     ->with('info', 'Verifikasi email Anda sebelum menggunakan aplikasi.');
+            } else {
+                $response = redirect()->intended(route('dashboard'))
+                    ->with('success', 'Selamat datang kembali, ' . $user->name . '!');
             }
 
-            return redirect()->intended(route('dashboard'))
-                ->with('success', 'Selamat datang kembali, ' . $user->name . '!');
+            return $response->withCookie($lastLoginEmailCookie);
         }
 
         return back()->withErrors([
             'email' => 'Alamat email salah.',
-        ])->onlyInput('email');
+        ])->onlyInput('email')->withCookie($lastLoginEmailCookie);
     }
 
     public function showRegister(): View|RedirectResponse
@@ -93,6 +110,12 @@ class AuthController extends Controller
 
         Auth::login($user);
         $request->session()->regenerate();
+
+        if (!config('auth.email_verification_enabled')) {
+            return redirect()->route('dashboard')
+                ->with('success', 'Akun berhasil dibuat. Verifikasi email sementara dinonaktifkan.');
+        }
+
         $expiresAt = now()->addMinutes(config('auth.verification.expire', 5));
         $user->sendVerificationNotificationUntil($expiresAt);
         $request->session()->put('email_verification_expires_at', $expiresAt->timestamp);
@@ -162,6 +185,11 @@ class AuthController extends Controller
 
         if ($emailChanged) {
             $user->markEmailAsUnverified();
+
+            if (!config('auth.email_verification_enabled')) {
+                return back()->with('success', 'Profil berhasil diperbarui. Verifikasi email sementara dinonaktifkan.');
+            }
+
             $expiresAt = now()->addMinutes(config('auth.verification.expire', 5));
             $user->sendVerificationNotificationUntil($expiresAt);
             $request->session()->put('email_verification_expires_at', $expiresAt->timestamp);

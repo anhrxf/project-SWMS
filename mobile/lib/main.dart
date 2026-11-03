@@ -416,7 +416,8 @@ class _ResidentHomeState extends State<ResidentHome> {
   List<WasteReport> _reports = [];
 
   bool get _verified =>
-      _verifiedOverride ?? widget.user['email_verified'] == true;
+      widget.user['email_verification_required'] != true ||
+      (_verifiedOverride ?? widget.user['email_verified'] == true);
   bool get _isAdmin => widget.user['role'] == 'admin';
 
   @override

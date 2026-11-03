@@ -121,8 +121,19 @@
                             </div>
                         </div>
 
+                        <div x-show="!aiLoading && aiError" class="rounded-lg border border-rose-200 bg-rose-50 p-3 text-[11px] leading-relaxed text-rose-700" role="alert" x-cloak>
+                            <span class="font-semibold">Deteksi AI gagal.</span>
+                            <span x-text="aiError"></span>
+                        </div>
+
+                        <div x-show="!aiLoading && aiUncertain" class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-[11px] leading-relaxed text-amber-800" role="status" x-cloak>
+                            <span class="font-semibold">AI belum cukup yakin.</span>
+                            <span x-text="aiMessage"></span>
+                            <span> Silakan tentukan kategori laporan secara manual.</span>
+                        </div>
+
                         <!-- Initial Idle State -->
-                        <div x-show="!aiLoading && !aiResult.category" class="text-center py-3 text-slate-400">
+                        <div x-show="!aiLoading && !aiResult.category && !aiError && !aiUncertain" class="text-center py-3 text-slate-400">
                             <p class="text-[11px]">Unggah foto untuk mendeteksi kategori sampah secara otomatis.</p>
                         </div>
                     </div>
@@ -156,7 +167,7 @@
                             <label for="waste_category" class="block text-xs font-bold text-slate-800">
                                 Kategori Sampah <span class="text-rose-500">*</span>
                             </label>
-                            <span class="text-[11px] text-slate-400">Otomatis terisi oleh AI</span>
+                            <span class="text-[11px] text-slate-400">AI mengisi kategori jika cukup yakin</span>
                         </div>
                         <select id="waste_category" 
                                 name="waste_category" 
@@ -316,6 +327,9 @@
             cameraLoading: false,
             cameraStream: null,
             aiLoading: false,
+            aiError: '',
+            aiUncertain: false,
+            aiMessage: '',
             aiResult: {
                 category: '',
                 confidence: null,
@@ -425,7 +439,7 @@
                     location_address: this.addressText,
                     latitude: this.latitude,
                     longitude: this.longitude,
-                    aiResult: this.aiResult,
+                    aiResult: JSON.parse(JSON.stringify(this.aiResult)),
                 };
                 const hasContent = Boolean(
                     values.title.trim() ||
@@ -693,6 +707,16 @@
 
             async runAiDetection(file) {
                 this.aiLoading = true;
+                this.aiError = '';
+                this.aiUncertain = false;
+                this.aiMessage = '';
+                this.aiResult = {
+                    category: '',
+                    confidence: null,
+                    label: '',
+                    recommendation: null,
+                };
+                this.selectedCategory = '';
                 const formData = new FormData();
                 formData.append('image', file);
 
@@ -708,12 +732,22 @@
                     });
 
                     const json = await res.json();
-                    if (json.success && json.data) {
-                        this.aiResult = json.data;
-                        this.selectedCategory = json.data.category;
+                    if (!res.ok || !json.success || !json.data) {
+                        this.aiError = json.message || 'Layanan AI tidak dapat memproses gambar.';
+                        return;
                     }
+
+                    if (json.data.status === 'uncertain') {
+                        this.aiUncertain = true;
+                        this.aiMessage = json.message || 'Pilih kategori secara manual.';
+                        return;
+                    }
+
+                    this.aiResult = json.data;
+                    this.selectedCategory = json.data.category;
                 } catch (err) {
                     console.error('AI Error:', err);
+                    this.aiError = 'Tidak dapat terhubung ke layanan AI. Pastikan layanan AI berjalan, lalu coba lagi.';
                 } finally {
                     this.aiLoading = false;
                     this.queueDraftSave();

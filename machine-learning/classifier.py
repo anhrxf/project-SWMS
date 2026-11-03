@@ -14,6 +14,7 @@ from torchvision.transforms import InterpolationMode
 
 IMAGE_SIZE = 224
 IMAGE_RESIZE = 256
+MIN_CONFIDENCE = 0.70
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
 

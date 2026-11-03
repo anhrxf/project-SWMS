@@ -98,7 +98,15 @@ bukan kata sandi akun Google.
 
 Publik, tidak memerlukan token. Request `multipart/form-data` berisi field wajib `image` (JPEG, PNG, JPG, atau WEBP; maksimum 10 MB).
 
-Berhasil menghasilkan `200 OK` dengan `success`, `message`, dan `data`. Data berisi `source`, `category`, `confidence`, `label`, `breakdown`, dan `recommendation` (`type`, `action`, `color_code`, `bin`). Kategori berasal dari model PyTorch yang dilayani FastAPI: `organic`, `plastic`, atau `paper`. Jika layanan/model AI tidak tersedia, endpoint mengembalikan `503 Service Unavailable`; gambar yang tidak dapat diproses mengembalikan `422 Unprocessable Content`.
+Berhasil diproses menghasilkan `200 OK` dengan `success`, `message`, dan `data`.
+Kategori hanya ditetapkan bila skor keluaran model minimal 70% dan prediksi pada
+foto asli serta foto yang dibalik horizontal sama. Jika tidak, respons tetap `200`,
+`data.status` bernilai `uncertain`, `data.category` dan `data.recommendation` bernilai
+`null`; jangan tampilkan skor kelas sebagai hasil pasti. Model hanya membedakan
+organic, plastic, dan paper, sehingga bukan pemeriksa umum untuk semua objek.
+Jika layanan/model AI tidak tersedia, endpoint mengembalikan `503 Service
+Unavailable`; gambar yang tidak dapat diproses mengembalikan `422 Unprocessable
+Content`.
 
 ## Laporan
 
@@ -132,7 +140,11 @@ Terautentikasi sebagai warga dengan email terverifikasi; akun admin atau akun be
 | `longitude` | Opsional, numerik antara -180 dan 180 |
 | `location_address` | Opsional, string, maksimum 500 karakter |
 
-Kategori dan confidence AI selalu dihitung ulang oleh server dari file yang diunggah; nilai prediksi yang dikirim klien tidak digunakan. Sukses menghasilkan `201 Created` dengan laporan pada `data`, termasuk relasi `user` dan `status_logs`. Status awal laporan adalah `pending`. Jika gambar tidak dapat diproses model, respons `422`; jika layanan/model tidak tersedia, respons `503`. Dalam kedua kasus, laporan tidak disimpan.
+Kategori AI selalu dihitung ulang oleh server dari file yang diunggah; nilai
+prediksi yang dikirim klien tidak digunakan. Jika AI yakin, kategori dan confidence
+disimpan. Jika AI ragu, laporan tetap dapat dibuat dengan `waste_category` pilihan
+pengguna, sedangkan `ai_detected_category` dan `ai_confidence` tetap `null`.
+Kegagalan layanan/model tetap menghasilkan `503` dan laporan tidak disimpan.
 
 ### Detail laporan — `GET /reports/{report}`
 

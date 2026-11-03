@@ -5,14 +5,14 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from io import BytesIO
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import torch
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from PIL import Image, UnidentifiedImageError
 from pydantic import BaseModel
 
-from classifier import load_model
+from classifier import MIN_CONFIDENCE, load_model
 
 ROOT = Path(__file__).resolve().parent
 MODEL_PATH = ROOT / "artifacts" / "model.pt"
@@ -41,10 +41,12 @@ RECOMMENDATIONS = {
 
 class PredictionResponse(BaseModel):
     success: bool
-    category: str
+    status: Literal["classified", "uncertain"]
+    message: str
+    category: str | None
     confidence: float
     breakdown: dict[str, float]
-    recommendation: dict[str, str]
+    recommendation: dict[str, str] | None
 
 
 @asynccontextmanager
@@ -65,19 +67,34 @@ def _predict(image: Image.Image, predictor: tuple[Any, list[str], Any]) -> dict[
     model, classes, image_transform = predictor
     tensor = image_transform(image).unsqueeze(0).to(DEVICE)
     with torch.inference_mode():
-        probabilities = torch.softmax(model(tensor), dim=1)[0].cpu().tolist()
+        original_probabilities = torch.softmax(model(tensor), dim=1)
+        flipped_probabilities = torch.softmax(model(tensor.flip([-1])), dim=1)
+        probabilities = (
+            (original_probabilities + flipped_probabilities) / 2
+        )[0].cpu()
 
-    top_index = max(range(len(probabilities)), key=probabilities.__getitem__)
-    category = classes[top_index]
+    top_index = int(probabilities.argmax().item())
+    confidence = float(probabilities[top_index].item())
+    view_predictions_agree = int(original_probabilities.argmax().item()) == int(
+        flipped_probabilities.argmax().item()
+    )
+    classified = confidence >= MIN_CONFIDENCE and view_predictions_agree
+    category = classes[top_index] if classified else None
     return {
         "success": True,
+        "status": "classified" if classified else "uncertain",
+        "message": (
+            "Prediksi tersedia."
+            if classified
+            else "AI belum cukup yakin. Pilih kategori secara manual dan gunakan foto yang lebih jelas bila perlu."
+        ),
         "category": category,
-        "confidence": round(float(probabilities[top_index]) * 100, 2),
+        "confidence": round(confidence * 100, 2),
         "breakdown": {
-            name: round(float(probability) * 100, 2)
+            name: round(float(probability.item()) * 100, 2)
             for name, probability in zip(classes, probabilities)
         },
-        "recommendation": RECOMMENDATIONS[category],
+        "recommendation": RECOMMENDATIONS[category] if category else None,
     }
 
 

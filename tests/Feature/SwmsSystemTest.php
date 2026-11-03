@@ -21,6 +21,7 @@ class SwmsSystemTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        config(['auth.email_verification_enabled' => true]);
         $this->seed();
     }
 
@@ -33,14 +34,49 @@ class SwmsSystemTest extends TestCase
         $dashResponse->assertRedirect('/login');
     }
 
+    public function test_login_page_only_prefills_the_last_used_email(): void
+    {
+        $this->get('/login')
+            ->assertOk()
+            ->assertSee('id="email"', false)
+            ->assertSee('name="login_email"', false)
+            ->assertSee('autocomplete="off"', false)
+            ->assertSee('autocomplete="new-password"', false)
+            ->assertDontSee('value="admin@swms.com"', false)
+            ->assertDontSee('name="password" value=', false);
+
+        $this->withCookie('last_login_email', 'user@swms.com')
+            ->get('/login')
+            ->assertOk()
+            ->assertSee('name="login_email"', false)
+            ->assertSee('value="user@swms.com"', false)
+            ->assertDontSee('value="admin@swms.com"', false)
+            ->assertDontSee('name="password" value=', false);
+    }
+
+    public function test_registration_password_fields_do_not_autofill_and_can_be_shown_or_hidden(): void
+    {
+        $this->get('/register')
+            ->assertOk()
+            ->assertSee('autocomplete="off"', false)
+            ->assertSee('name="password"', false)
+            ->assertSee('name="password_confirmation"', false)
+            ->assertSee('autocomplete="new-password"', false)
+            ->assertSee(':type="show ? \'text\' : \'password\'"', false)
+            ->assertSee('Tampilkan konfirmasi kata sandi', false)
+            ->assertDontSee('name="password" value=', false)
+            ->assertDontSee('name="password_confirmation" value=', false);
+    }
+
     public function test_user_can_login_with_valid_credentials(): void
     {
         $response = $this->post('/login', [
-            'email' => 'admin@swms.com',
+            'login_email' => 'admin@swms.com',
             'password' => 'password',
         ]);
 
         $response->assertRedirect('/dashboard');
+        $response->assertCookie('last_login_email', 'admin@swms.com');
         $this->assertAuthenticated();
     }
 
@@ -53,7 +89,7 @@ class SwmsSystemTest extends TestCase
 
         $response->assertSessionHasErrors([
             'email' => 'Alamat email salah.',
-        ]);
+        ])->assertCookie('last_login_email', 'admin@swms.com');
         $this->assertGuest();
     }
 
@@ -89,6 +125,74 @@ class SwmsSystemTest extends TestCase
             User::where('email', 'wargabaru@swms.com')->first(),
             VerifyEmailNotification::class
         );
+    }
+
+    public function test_demo_registration_works_without_sending_verification_email_when_disabled(): void
+    {
+        Notification::fake();
+        config(['auth.email_verification_enabled' => false]);
+
+        $this->post('/register', [
+            'name' => 'Warga Demo',
+            'email' => 'wargademo@swms.com',
+            'phone' => '087799881123',
+            'password' => 'password123',
+            'password_confirmation' => 'password123',
+        ])->assertRedirect('/dashboard')
+            ->assertSessionHas('success', 'Akun berhasil dibuat. Verifikasi email sementara dinonaktifkan.');
+
+        $user = User::where('email', 'wargademo@swms.com')->firstOrFail();
+        $this->assertFalse($user->hasVerifiedEmail());
+        $this->assertAuthenticatedAs($user);
+        $this->get('/dashboard')->assertOk();
+        Notification::assertNothingSent();
+    }
+
+    public function test_unverified_web_login_can_use_demo_mode_when_verification_is_disabled(): void
+    {
+        config(['auth.email_verification_enabled' => false]);
+        $user = User::factory()->unverified()->create();
+
+        $this->post('/login', [
+            'email' => $user->email,
+            'password' => 'password',
+        ])->assertRedirect('/dashboard')
+            ->assertSessionHas('success', 'Selamat datang kembali, ' . $user->name . '!');
+
+        $this->get('/dashboard')->assertOk();
+    }
+
+    public function test_api_registration_allows_reports_without_sending_verification_when_disabled(): void
+    {
+        Notification::fake();
+        config(['auth.email_verification_enabled' => false]);
+
+        $response = $this->postJson('/api/v1/auth/register', [
+            'name' => 'Warga API Demo',
+            'email' => 'apidemowarga@example.com',
+            'phone' => '087700001123',
+            'password' => 'password123',
+            'password_confirmation' => 'password123',
+        ])->assertCreated()
+            ->assertJsonPath('email_verification_required', false)
+            ->assertJsonPath('email_sent', false)
+            ->assertJsonPath('verification_expires_at', null)
+            ->assertJsonPath('data.verification_url', null);
+
+        $user = User::where('email', 'apidemowarga@example.com')->firstOrFail();
+        $this->assertFalse($user->hasVerifiedEmail());
+        Notification::assertNothingSent();
+
+        $token = $response->json('data.token');
+        $this->withToken($token)->getJson('/api/v1/auth/profile')
+            ->assertOk()
+            ->assertJsonPath('data.email_verification_required', false);
+        $this->withToken($token)->getJson('/api/v1/reports')->assertOk();
+        $this->withToken($token)->postJson('/api/v1/auth/email/verification-notification')
+            ->assertOk()
+            ->assertJsonPath('email_sent', false)
+            ->assertJsonPath('email_verification_required', false);
+        Notification::assertNothingSent();
     }
 
     public function test_signed_email_verification_activates_web_account(): void
@@ -251,6 +355,28 @@ class SwmsSystemTest extends TestCase
             'email_verified_at' => null,
         ]);
         Notification::assertSentTo($user->fresh(), VerifyEmailNotification::class);
+    }
+
+    public function test_changing_email_does_not_send_verification_when_disabled(): void
+    {
+        Notification::fake();
+        config(['auth.email_verification_enabled' => false]);
+        $user = User::where('email', 'user@swms.com')->firstOrFail();
+
+        $this->from('/profile')->actingAs($user)->put('/profile', [
+            'name' => $user->name,
+            'email' => 'new.demo.address@example.com',
+            'phone' => $user->phone,
+            'address' => $user->address,
+        ])->assertRedirect('/profile')
+            ->assertSessionHas('success', 'Profil berhasil diperbarui. Verifikasi email sementara dinonaktifkan.');
+
+        $this->assertDatabaseHas('users', [
+            'id' => $user->id,
+            'email' => 'new.demo.address@example.com',
+            'email_verified_at' => null,
+        ]);
+        Notification::assertNothingSent();
     }
 
     public function test_email_verification_link_rejects_tampered_and_expired_urls(): void
@@ -472,6 +598,8 @@ class SwmsSystemTest extends TestCase
         $response->assertJsonStructure([
             'success',
             'data' => [
+                'status',
+                'message',
                 'category',
                 'confidence',
                 'label',
@@ -479,6 +607,34 @@ class SwmsSystemTest extends TestCase
                 'recommendation',
             ],
         ]);
+    }
+
+    public function test_ai_classify_endpoint_returns_uncertain_without_a_category(): void
+    {
+        Http::fake([
+            '*' => Http::response([
+                'success' => true,
+                'status' => 'uncertain',
+                'message' => 'AI belum cukup yakin.',
+                'category' => null,
+                'confidence' => 58.2,
+                'breakdown' => [
+                    'organic' => 20.0,
+                    'plastic' => 58.2,
+                    'paper' => 21.8,
+                ],
+                'recommendation' => null,
+            ], 200),
+        ]);
+        $file = UploadedFile::fake()->image('ambiguous.jpg');
+
+        $this->postJson('/api/v1/ai/classify', ['image' => $file])
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.status', 'uncertain')
+            ->assertJsonPath('data.category', null)
+            ->assertJsonPath('data.recommendation', null)
+            ->assertJsonPath('message', 'AI belum cukup yakin.');
     }
 
     public function test_report_is_not_saved_when_ml_service_is_unavailable(): void
@@ -501,6 +657,78 @@ class SwmsSystemTest extends TestCase
             'title' => 'Laporan tanpa layanan AI',
         ]);
         $this->assertSame([], Storage::disk('public')->allFiles('reports'));
+    }
+
+    public function test_report_is_saved_with_manual_category_when_ai_is_uncertain(): void
+    {
+        Storage::fake('public');
+        Http::fake([
+            '*' => Http::response([
+                'success' => true,
+                'status' => 'uncertain',
+                'message' => 'AI belum cukup yakin.',
+                'category' => null,
+                'confidence' => 58.2,
+                'breakdown' => [
+                    'organic' => 20.0,
+                    'plastic' => 58.2,
+                    'paper' => 21.8,
+                ],
+                'recommendation' => null,
+            ], 200),
+        ]);
+
+        $user = User::where('email', 'user@swms.com')->firstOrFail();
+        $this->actingAs($user)->post('/reports', [
+            'title' => 'Foto dengan klasifikasi meragukan',
+            'description' => 'Kategori dipilih secara manual karena AI tidak yakin.',
+            'waste_category' => 'paper',
+            'image' => UploadedFile::fake()->image('uncertain.jpg'),
+        ])->assertRedirect();
+
+        $report = Report::where('title', 'Foto dengan klasifikasi meragukan')->firstOrFail();
+        $this->assertSame('paper', $report->waste_category);
+        $this->assertNull($report->ai_detected_category);
+        $this->assertNull($report->ai_confidence);
+        Storage::disk('public')->assertExists($report->image_path);
+    }
+
+    public function test_api_report_is_saved_with_manual_category_when_ai_is_uncertain(): void
+    {
+        Storage::fake('public');
+        Http::fake([
+            '*' => Http::response([
+                'success' => true,
+                'status' => 'uncertain',
+                'message' => 'AI belum cukup yakin.',
+                'category' => null,
+                'confidence' => 58.2,
+                'breakdown' => [
+                    'organic' => 20.0,
+                    'plastic' => 58.2,
+                    'paper' => 21.8,
+                ],
+                'recommendation' => null,
+            ], 200),
+        ]);
+
+        $user = User::where('email', 'user@swms.com')->firstOrFail();
+        $token = $user->createToken('uncertain-classification-test')->plainTextToken;
+        $this->withToken($token)->postJson('/api/v1/reports', [
+            'title' => 'Laporan API dengan klasifikasi meragukan',
+            'description' => 'Kategori dipilih warga karena AI tidak yakin.',
+            'waste_category' => 'paper',
+            'image' => UploadedFile::fake()->image('uncertain.jpg'),
+        ])->assertCreated()
+            ->assertJsonPath('ai_prediction_status', 'uncertain')
+            ->assertJsonPath('data.ai_detected_category', null)
+            ->assertJsonPath('data.ai_confidence', null);
+
+        $report = Report::where('title', 'Laporan API dengan klasifikasi meragukan')->firstOrFail();
+        $this->assertSame('paper', $report->waste_category);
+        $this->assertNull($report->ai_detected_category);
+        $this->assertNull($report->ai_confidence);
+        Storage::disk('public')->assertExists($report->image_path);
     }
 
     public function test_api_report_is_not_saved_when_ml_service_is_unavailable(): void
@@ -534,6 +762,8 @@ class SwmsSystemTest extends TestCase
         Http::fake([
             '*' => Http::response([
                 'success' => true,
+                'status' => 'classified',
+                'message' => 'Prediksi tersedia.',
                 'category' => 'plastic',
                 'confidence' => 92.5,
                 'breakdown' => [
@@ -567,6 +797,25 @@ class SwmsSystemTest extends TestCase
             ->assertSee(number_format($evaluation['test_accuracy'] * 100, 2) . '%')
             ->assertSee('Confusion matrix')
             ->assertSee('Macro average / akurasi');
+    }
+
+    public function test_ai_pages_display_classification_failures(): void
+    {
+        $user = User::where('email', 'user@swms.com')->firstOrFail();
+
+        $this->actingAs($user)
+            ->get('/reports/create')
+            ->assertOk()
+            ->assertSee('JSON.parse(JSON.stringify(this.aiResult))', false)
+            ->assertSee('AI mengisi kategori jika cukup yakin')
+            ->assertSee('Deteksi AI gagal.', false)
+            ->assertSee('Tidak dapat terhubung ke layanan AI.', false);
+
+        $this->actingAs($user)
+            ->get('/ai-lab')
+            ->assertOk()
+            ->assertSee('Deteksi AI gagal.', false)
+            ->assertSee('Layanan AI tidak dapat memproses gambar.', false);
     }
 
     public function test_api_v1_auth_and_reports(): void

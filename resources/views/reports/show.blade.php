@@ -124,7 +124,7 @@
                         </span>
                     @else
                         <span class="px-2.5 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-600">
-                            Belum dianalisis
+                            Tidak cukup yakin
                         </span>
                     @endif
                 </div>
@@ -132,7 +132,7 @@
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                     <div class="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
                         <span class="text-[11px] text-slate-500">
-                            {{ $report->ai_detected_category ? 'Kategori hasil deteksi:' : 'Kategori laporan:' }}
+                            {{ $report->ai_detected_category ? 'Kategori hasil deteksi:' : 'Kategori laporan (pilihan pengguna):' }}
                         </span>
                         <div class="text-sm font-bold text-slate-900 mt-0.5 capitalize">
                             {{ $report->ai_detected_category ?: $report->waste_category }}
@@ -142,7 +142,7 @@
                                 <div class="bg-emerald-600 h-1.5 rounded-full" style="width: {{ $report->ai_confidence }}%"></div>
                             </div>
                         @else
-                            <p class="text-[11px] text-slate-500 mt-2">Hasil model tidak tersedia untuk laporan ini.</p>
+                            <p class="text-[11px] text-slate-500 mt-2">AI tidak menetapkan kategori karena tingkat keyakinan atau konsistensi prediksinya rendah.</p>
                         @endif
                     </div>
 

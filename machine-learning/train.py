@@ -26,6 +26,7 @@ from torch.utils.data import DataLoader, Subset
 from torchvision.datasets import ImageFolder
 
 from classifier import (
+    MIN_CONFIDENCE,
     build_model,
     evaluation_transform,
     training_transform,
@@ -121,16 +122,27 @@ def _run_epoch(
 
 def _predict(
     model: nn.Module, loader: DataLoader[Any], device: torch.device
-) -> tuple[list[int], list[int]]:
+) -> tuple[list[int], list[int], list[float], list[bool]]:
     model.eval()
     expected: list[int] = []
     predicted: list[int] = []
+    confidences: list[float] = []
+    view_agreements: list[bool] = []
     with torch.inference_mode():
         for images, labels in loader:
-            logits = model(images.to(device))
+            images = images.to(device)
+            original_probabilities = torch.softmax(model(images), dim=1)
+            flipped_probabilities = torch.softmax(model(images.flip([-1])), dim=1)
+            probabilities = (original_probabilities + flipped_probabilities) / 2
             expected.extend(labels.tolist())
-            predicted.extend(logits.argmax(dim=1).cpu().tolist())
-    return expected, predicted
+            predicted.extend(probabilities.argmax(dim=1).cpu().tolist())
+            confidences.extend(probabilities.max(dim=1).values.cpu().tolist())
+            view_agreements.extend(
+                (original_probabilities.argmax(dim=1) == flipped_probabilities.argmax(dim=1))
+                .cpu()
+                .tolist()
+            )
+    return expected, predicted, confidences, view_agreements
 
 
 def _write_json(path: Path, contents: Any) -> None:
@@ -288,8 +300,24 @@ def main() -> None:
         checkpoint_path,
     )
 
-    expected, predicted = _predict(model, test_loader, device)
+    expected, predicted, confidences, view_agreements = _predict(
+        model, test_loader, device
+    )
     accuracy = float(accuracy_score(expected, predicted))
+    accepted = [
+        confidence >= MIN_CONFIDENCE and agrees
+        for confidence, agrees in zip(confidences, view_agreements)
+    ]
+    accepted_count = sum(accepted)
+    selective_accuracy = (
+        sum(
+            is_accepted and actual == prediction
+            for is_accepted, actual, prediction in zip(accepted, expected, predicted)
+        )
+        / accepted_count
+        if accepted_count
+        else None
+    )
     report = classification_report(
         expected,
         predicted,
@@ -317,6 +345,13 @@ def main() -> None:
         "target_accuracy": TARGET_ACCURACY,
         "target_accuracy_met": accuracy >= TARGET_ACCURACY,
         "test_accuracy": accuracy,
+        "selective_classification": {
+            "minimum_confidence": MIN_CONFIDENCE,
+            "requires_horizontal_flip_agreement": True,
+            "accepted": accepted_count,
+            "coverage": accepted_count / len(expected),
+            "accuracy_when_accepted": selective_accuracy,
+        },
         "classification_report": report,
         "confusion_matrix": matrix.tolist(),
     }
@@ -324,7 +359,9 @@ def main() -> None:
     _write_json(args.output_dir / "training_history.json", history)
 
     split_rows = []
-    for index, actual, prediction in zip(test_indices, expected, predicted):
+    for index, actual, prediction, confidence, is_accepted in zip(
+        test_indices, expected, predicted, confidences, accepted
+    ):
         split_rows.append(
             {
                 "image": Path(train_dataset.samples[index][0])
@@ -332,12 +369,17 @@ def main() -> None:
                 .as_posix(),
                 "actual": classes[actual],
                 "predicted": classes[prediction],
+                "confidence": round(confidence, 4),
+                "accepted": is_accepted,
             }
         )
     with (args.output_dir / "test_predictions.csv").open(
         "w", encoding="utf-8", newline=""
     ) as file:
-        writer = csv.DictWriter(file, fieldnames=("image", "actual", "predicted"))
+        writer = csv.DictWriter(
+            file,
+            fieldnames=("image", "actual", "predicted", "confidence", "accepted"),
+        )
         writer.writeheader()
         writer.writerows(split_rows)
 

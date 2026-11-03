@@ -17,7 +17,14 @@ from fastapi_app import MAX_IMAGE_BYTES, app
 
 class FixedModel(nn.Module):
     def forward(self, images: torch.Tensor) -> torch.Tensor:
-        return torch.tensor([[0.1, 0.2, 0.7]], device=images.device).repeat(
+        return torch.tensor([[0.1, 0.2, 3.7]], device=images.device).repeat(
+            images.shape[0], 1
+        )
+
+
+class UncertainModel(nn.Module):
+    def forward(self, images: torch.Tensor) -> torch.Tensor:
+        return torch.tensor([[0.1, 0.2, 0.3]], device=images.device).repeat(
             images.shape[0], 1
         )
 
@@ -56,13 +63,32 @@ class PredictionEndpointTest(unittest.TestCase):
             files={"file": ("sample.jpg", _image_bytes(), "image/jpeg")},
         )
         self.assertEqual(200, response.status_code)
+        self.assertEqual("classified", response.json()["status"])
         self.assertEqual("plastic", response.json()["category"])
         expected_confidence = round(
-            float(torch.softmax(torch.tensor([0.1, 0.2, 0.7]), dim=0)[2]) * 100,
+            float(torch.softmax(torch.tensor([0.1, 0.2, 3.7]), dim=0)[2]) * 100,
             2,
         )
         self.assertEqual(expected_confidence, response.json()["confidence"])
         self.assertEqual(3, len(response.json()["breakdown"]))
+
+    def test_low_confidence_prediction_is_returned_as_uncertain(self) -> None:
+        self.client.app.state.predictor = (
+            UncertainModel(),
+            ["organic", "paper", "plastic"],
+            ToTensor(),
+        )
+
+        response = self.client.post(
+            "/predict",
+            files={"file": ("sample.jpg", _image_bytes(), "image/jpeg")},
+        )
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("uncertain", response.json()["status"])
+        self.assertIsNone(response.json()["category"])
+        self.assertIsNone(response.json()["recommendation"])
+        self.assertIn("belum cukup yakin", response.json()["message"])
 
     def test_empty_invalid_and_oversized_files_are_rejected(self) -> None:
         empty = self.client.post(

@@ -58,21 +58,21 @@ class Report extends Model
     public function getCategoryBadgeAttribute(): string
     {
         return match ($this->waste_category) {
-            'organic' => 'bg-emerald-100 text-emerald-800 border-emerald-200',
-            'plastic' => 'bg-blue-100 text-blue-800 border-blue-200',
-            'paper' => 'bg-amber-100 text-amber-800 border-amber-200',
-            default => 'bg-slate-100 text-slate-800 border-slate-200',
+            'organic' => 'bg-emerald-50 text-emerald-700 border-emerald-100',
+            'plastic' => 'bg-blue-50 text-blue-700 border-blue-100',
+            'paper' => 'bg-amber-50 text-amber-700 border-amber-100',
+            default => 'bg-slate-50 text-slate-700 border-slate-100',
         };
     }
 
     public function getStatusBadgeAttribute(): string
     {
         return match ($this->status) {
-            'pending' => 'bg-amber-100 text-amber-800 border-amber-200',
-            'in_progress' => 'bg-sky-100 text-sky-800 border-sky-200',
-            'completed' => 'bg-emerald-100 text-emerald-800 border-emerald-200',
-            'rejected' => 'bg-rose-100 text-rose-800 border-rose-200',
-            default => 'bg-slate-100 text-slate-800 border-slate-200',
+            'pending' => 'bg-amber-50 text-amber-700 border-amber-100',
+            'in_progress' => 'bg-sky-50 text-sky-700 border-sky-100',
+            'completed' => 'bg-emerald-50 text-emerald-700 border-emerald-100',
+            'rejected' => 'bg-rose-50 text-rose-700 border-rose-100',
+            default => 'bg-slate-50 text-slate-700 border-slate-100',
         };
     }
 
