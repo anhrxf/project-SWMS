@@ -16,6 +16,10 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
+        if (! app()->environment(['local', 'testing'])) {
+            return;
+        }
+
         // 1. Create Default Admin User
         $admin = User::firstOrCreate(
             ['email' => 'admin@swms.com'],

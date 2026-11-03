@@ -3,7 +3,7 @@
 [![Laravel](https://img.shields.io/badge/Laravel-11%20%2F%2013-FF2D20?style=for-the-badge&logo=laravel&logoColor=white)](https://laravel.com)
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![TailwindCSS](https://img.shields.io/badge/Tailwind-CSS-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
-[![PHPUnit](https://img.shields.io/badge/Tests-28%20Passed-success?style=for-the-badge&logo=php)](https://phpunit.de)
+[![PHPUnit](https://img.shields.io/badge/Tests-47%20Passed-success?style=for-the-badge&logo=php)](https://phpunit.de)
 
 Sistem Pengelolaan Sampah Cerdas berbasis teknologi web modern, integrasi REST API, dan Computer Vision Machine Learning untuk klasifikasi sampah otomatis. Proyek ini dikembangkan secara komprehensif sebagai pemenuhan **Technical Coding Test – Fullstack Developer di Bilcode Technology**.
 
@@ -166,7 +166,11 @@ Ringkasan Entitas Utama:
 
 ## 4. Akun Demo Pengujian
 
-Aplikasi telah dilengkapi seeder akun demo dengan fitur **1-Klik Isi Kredensial** pada halaman login:
+Akun dan data demo hanya dibuat oleh seeder saat `APP_ENV=local` atau `testing`.
+Jangan gunakan kredensial demo ini di production; provisioning administrator
+production harus dilakukan secara terpisah dengan kata sandi unik.
+
+Seeder akun demo mendukung fitur **1-Klik Isi Kredensial** pada halaman login:
 
 | Peran | Alamat Email | Kata Sandi | Deskripsi Akses |
 | :--- | :--- | :--- | :--- |
@@ -209,11 +213,15 @@ php artisan storage:link
 
 `php artisan migrate:fresh` menghapus semua tabel beserta datanya. Gunakan hanya jika
 memang ingin mengatur ulang database lokal; jangan gunakan untuk pembaruan rutin.
+Seeder tidak membuat akun atau laporan demo di luar environment `local` dan `testing`.
+Untuk production, pastikan `APP_DEBUG=false`, gunakan HTTPS, dan atur sendiri kredensial
+administrator serta koneksi database yang hanya dapat diakses oleh aplikasi.
 
 ### Pengiriman dan verifikasi email
 
-Pendaftaran mengirim tautan verifikasi yang berlaku selama 5 menit, dengan hitung mundur
-pada halaman verifikasi. Akun belum dapat
+Saat mendaftar, aplikasi mengirim tautan verifikasi jika fitur verifikasi email aktif
+(default production; nonaktif untuk `local`/`testing`). Tautan berlaku selama 5 menit,
+dengan hitung mundur pada halaman verifikasi. Akun belum dapat
 mengakses dashboard, laporan, atau fitur aplikasi sebelum tautan dibuka. Jika email
 diubah dari halaman profil, alamat baru harus diverifikasi ulang. Verifikasi membuktikan
 bahwa pengguna dapat menerima email tersebut; hal ini tidak memeriksa apakah alamat
@@ -365,7 +373,9 @@ project-SWMS/
 ├── docs/
 │   ├── PRD.md                          # Product Requirement Document (Alur Admin & User)
 │   ├── ERD.md                          # Dokumentasi ERD & Kamus Data
-│   └── API_DOCUMENTATION.md            # Dokumentasi Endpoint REST API
+│   ├── API_DOCUMENTATION.md            # Dokumentasi Endpoint REST API
+│   ├── SUBMISSION_CHECKLIST.md         # Status dan daftar persiapan pengumpulan
+│   └── VIDEO_DEMO_SCRIPT.md            # Naskah video demo maksimal 10 menit
 ├── machine-learning/
 │   ├── training_photos/                # 150 foto dan manifest sumber/hash
 │   ├── download_training_photos.py     # Pengunduh dataset dengan revision tetap
@@ -385,7 +395,7 @@ project-SWMS/
 ├── routes/
 │   ├── web.php                         # Rute Web & Proteksi Middleware
 │   └── api.php                         # Rute REST API v1
-├── tests/Feature/SwmsSystemTest.php    # Automated Test Suite (11 Tests, 42 Assertions)
+├── tests/Feature/SwmsSystemTest.php    # Automated Test Suite
 └── README.md                           # Dokumentasi Utama Proyek
 ```
 
@@ -400,8 +410,11 @@ project-SWMS/
 - [x] **Database Schema & ERD**: Diagram Mermaid dan kamus data komprehensif (`docs/ERD.md`).
 - [x] **Machine Learning source**: Dataset 150 foto, tiga kategori, training pipeline, API FastAPI, dan laporan metrik saat training.
 - [x] **Target akurasi 80%**: Evaluasi aktual mencapai 91,30% pada 23 sampel test; batasan dataset kecil dijelaskan di dokumentasi.
-- [ ] **APK / demo ter-host / video demo**: Belum disertakan; perlu toolchain Android dan proses deployment/rekaman.
+- [ ] **Demo website publik**: Belum di-deploy; URL harus dilengkapi sebelum pengumpulan.
+- [ ] **APK release**: Belum dibuat; build setelah URL API production HTTPS tersedia dan uji di perangkat Android.
+- [ ] **Video demo (maks. 10 menit)**: Belum direkam; naskah 8–9 menit tersedia di [`docs/VIDEO_DEMO_SCRIPT.md`](./docs/VIDEO_DEMO_SCRIPT.md).
 - [x] **Panduan Instalasi**: Dokumentasi langkah demi langkah tersedia di README.
+- [ ] **Checklist pengumpulan**: Periksa status dan langkah publikasi pada [`docs/SUBMISSION_CHECKLIST.md`](./docs/SUBMISSION_CHECKLIST.md).
 
 ---
 *Dikembangkan dengan dedikasi untuk Technical Coding Test – Fullstack Developer Bilcode Technology.*

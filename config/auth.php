@@ -73,7 +73,10 @@ return [
         // ],
     ],
 
-    'email_verification_enabled' => env('EMAIL_VERIFICATION_ENABLED', false),
+    'email_verification_enabled' => env(
+        'EMAIL_VERIFICATION_ENABLED',
+        ! in_array(env('APP_ENV', 'production'), ['local', 'testing'], true)
+    ),
 
     'verification' => [
         'expire' => 5,

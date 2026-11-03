@@ -2,8 +2,9 @@
 
 Aplikasi Flutter warga untuk registrasi/login, verifikasi email, dashboard dan
 riwayat laporan, serta pembuatan laporan dengan foto, lokasi GPS, dan deteksi
-AI. Backend menggunakan Laravel API; service model FastAPI harus aktif untuk
-prediksi dan penyimpanan laporan.
+AI. Kamera laporan mendukung pergantian kamera depan dan belakang; foto juga
+dapat dipilih dari galeri. Backend menggunakan Laravel API; service model
+FastAPI harus aktif untuk prediksi dan penyimpanan laporan.
 
 ## Menjalankan aplikasi
 

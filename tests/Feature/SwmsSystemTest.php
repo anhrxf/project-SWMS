@@ -176,8 +176,8 @@ class SwmsSystemTest extends TestCase
         ])->assertCreated()
             ->assertJsonPath('email_verification_required', false)
             ->assertJsonPath('email_sent', false)
-            ->assertJsonPath('verification_expires_at', null)
-            ->assertJsonPath('data.verification_url', null);
+            ->assertJsonPath('verification_expires_at', null);
+        $this->assertArrayNotHasKey('verification_url', $response->json('data'));
 
         $user = User::where('email', 'apidemowarga@example.com')->firstOrFail();
         $this->assertFalse($user->hasVerifiedEmail());
@@ -297,7 +297,7 @@ class SwmsSystemTest extends TestCase
             ->assertSee('Tautan verifikasi telah kedaluwarsa.');
     }
 
-    public function test_api_registration_returns_verification_link_and_api_account_is_activated_by_link(): void
+    public function test_api_registration_sends_verification_link_only_by_email(): void
     {
         Notification::fake();
         $response = $this->postJson('/api/v1/auth/register', [
@@ -310,25 +310,18 @@ class SwmsSystemTest extends TestCase
             ->assertJsonPath('data.email_verified', false);
 
         $user = User::where('email', 'api.warga@example.com')->firstOrFail();
-        $verificationUrl = $response->json('data.verification_url');
-
-        $this->assertNotEmpty($verificationUrl);
+        $this->assertArrayNotHasKey('verification_url', $response->json('data'));
+        $this->assertSame(5, config('auth.verification.expire'));
+        Notification::assertSentTo($user, VerifyEmailNotification::class);
+        $notification = Notification::sent($user, VerifyEmailNotification::class)->first();
+        $message = $notification->toMail($user);
+        $verificationUrl = $message->actionUrl;
         $query = [];
         parse_str((string) parse_url($verificationUrl, PHP_URL_QUERY), $query);
         $this->assertSame(
             strtotime($response->json('verification_expires_at')),
             (int) ($query['expires'] ?? 0)
         );
-        $this->assertSame(5, config('auth.verification.expire'));
-        Notification::assertSentTo($user, VerifyEmailNotification::class);
-        $notification = Notification::sent($user, VerifyEmailNotification::class)->first();
-        $message = $notification->toMail($user);
-        $notificationQuery = [];
-        parse_str(
-            (string) parse_url($message->actionUrl, PHP_URL_QUERY),
-            $notificationQuery
-        );
-        $this->assertSame($query['expires'], $notificationQuery['expires']);
         $this->assertContains(
             'Tautan ini berlaku selama 5 menit. Jika Anda tidak membuat akun, abaikan email ini.',
             $message->outroLines
@@ -513,6 +506,18 @@ class SwmsSystemTest extends TestCase
             'status' => 'pending',
             'admin_notes' => 'Catatan yang sudah disimpan.',
         ]);
+    }
+
+    public function test_demo_seeder_does_not_create_accounts_or_reports_in_production(): void
+    {
+        Report::query()->delete();
+        User::query()->delete();
+        $this->app->detectEnvironment(fn () => 'production');
+
+        $this->app->make(DatabaseSeeder::class)->run();
+
+        $this->assertDatabaseMissing('users', ['email' => 'admin@swms.com']);
+        $this->assertDatabaseCount('reports', 0);
     }
 
     public function test_regular_user_cannot_access_user_management(): void

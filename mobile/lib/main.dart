@@ -1,5 +1,8 @@
+import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:camera/camera.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
@@ -710,16 +713,19 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
 
   Future<void> _pickImage(ImageSource source) async {
     try {
-      final selected = await _picker.pickImage(
-        source: source,
-        imageQuality: 86,
-      );
+      final selected = source == ImageSource.camera
+          ? await Navigator.of(context).push<XFile>(
+              MaterialPageRoute(builder: (_) => const CameraCaptureScreen()),
+            )
+          : await _picker.pickImage(source: source, imageQuality: 86);
       if (selected == null) return;
       final bytes = await selected.readAsBytes();
       if (bytes.length > 10 * 1024 * 1024) {
+        if (!mounted) return;
         setState(() => _error = 'Ukuran foto maksimal 10 MB.');
         return;
       }
+      if (!mounted) return;
       setState(() {
         _image = selected;
         _imageBytes = bytes;
@@ -1028,6 +1034,227 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class CameraCaptureScreen extends StatefulWidget {
+  const CameraCaptureScreen({super.key});
+
+  @override
+  State<CameraCaptureScreen> createState() => _CameraCaptureScreenState();
+}
+
+class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
+  List<CameraDescription> _cameras = [];
+  CameraController? _controller;
+  bool _initializing = true;
+  bool _capturing = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeCamera();
+  }
+
+  @override
+  void dispose() {
+    unawaited(_controller?.dispose());
+    super.dispose();
+  }
+
+  Future<void> _initializeCamera({CameraDescription? preferredCamera}) async {
+    setState(() {
+      _initializing = true;
+      _error = null;
+    });
+    CameraController? controller;
+    try {
+      final cameras = _cameras.isEmpty ? await availableCameras() : _cameras;
+      if (cameras.isEmpty) {
+        throw StateError('Tidak ada kamera yang tersedia.');
+      }
+      _cameras = cameras;
+      final selected =
+          preferredCamera ??
+          cameras.firstWhere(
+            (camera) => camera.lensDirection == CameraLensDirection.back,
+            orElse: () => cameras.first,
+          );
+      controller = CameraController(
+        selected,
+        ResolutionPreset.high,
+        enableAudio: false,
+      );
+      await controller.initialize();
+      if (!mounted) {
+        await controller.dispose();
+        return;
+      }
+      setState(() {
+        _controller = controller;
+        _initializing = false;
+      });
+    } on CameraException catch (error, stackTrace) {
+      debugPrint('Gagal menginisialisasi kamera: $error\n$stackTrace');
+      await controller?.dispose();
+      if (mounted) {
+        setState(() {
+          _initializing = false;
+          _error = 'Kamera tidak dapat dibuka. Periksa izin kamera perangkat.';
+        });
+      }
+    } catch (error, stackTrace) {
+      debugPrint('Gagal menginisialisasi kamera: $error\n$stackTrace');
+      await controller?.dispose();
+      if (mounted) {
+        setState(() {
+          _initializing = false;
+          _error = 'Kamera tidak tersedia pada perangkat ini.';
+        });
+      }
+    }
+  }
+
+  Future<void> _switchCamera() async {
+    final controller = _controller;
+    if (controller == null || _initializing || _capturing) return;
+    final currentDirection = controller.description.lensDirection;
+    final otherCameras = _cameras
+        .where((camera) => camera.lensDirection != currentDirection)
+        .toList();
+    if (otherCameras.isEmpty) return;
+
+    setState(() {
+      _controller = null;
+      _initializing = true;
+    });
+    await controller.dispose();
+    await _initializeCamera(preferredCamera: otherCameras.first);
+  }
+
+  Future<void> _capturePhoto() async {
+    final controller = _controller;
+    if (controller == null || _capturing || _initializing) return;
+    setState(() => _capturing = true);
+    try {
+      final image = await controller.takePicture();
+      if (mounted) Navigator.of(context).pop(image);
+    } on CameraException catch (error, stackTrace) {
+      debugPrint('Gagal mengambil foto: $error\n$stackTrace');
+      if (mounted) {
+        setState(() {
+          _capturing = false;
+          _error = 'Foto gagal diambil. Silakan coba kembali.';
+        });
+      }
+    } catch (error, stackTrace) {
+      debugPrint('Gagal mengambil foto: $error\n$stackTrace');
+      if (mounted) {
+        setState(() {
+          _capturing = false;
+          _error = 'Foto gagal diambil. Silakan coba kembali.';
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = _controller;
+    final canFlip = _cameras.any(
+      (camera) =>
+          controller != null &&
+          camera.lensDirection != controller.description.lensDirection,
+    );
+
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        title: const Text('Ambil foto'),
+        actions: [
+          if (canFlip)
+            IconButton(
+              tooltip: 'Balik kamera',
+              onPressed: _initializing || _capturing ? null : _switchCamera,
+              icon: const Icon(Icons.flip_camera_android_outlined),
+            ),
+        ],
+      ),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(
+              child: Center(
+                child: _initializing
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : controller != null
+                    ? Transform.flip(
+                        flipX:
+                            !kIsWeb &&
+                            controller.description.lensDirection ==
+                                CameraLensDirection.front,
+                        child: CameraPreview(controller),
+                      )
+                    : Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              _error ?? 'Kamera tidak tersedia.',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(color: Colors.white),
+                            ),
+                            const SizedBox(height: 16),
+                            FilledButton.icon(
+                              onPressed: _initializeCamera,
+                              icon: const Icon(Icons.refresh),
+                              label: const Text('Coba lagi'),
+                            ),
+                          ],
+                        ),
+                      ),
+              ),
+            ),
+            if (_error != null && controller != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Text(
+                  _error!,
+                  style: const TextStyle(color: Colors.white),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: IconButton.filled(
+                tooltip: 'Ambil foto',
+                onPressed: _initializing || _capturing || controller == null
+                    ? null
+                    : _capturePhoto,
+                icon: _capturing
+                    ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.camera_alt_outlined),
+                iconSize: 32,
+                style: IconButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: _forest,
+                  disabledBackgroundColor: Colors.white38,
+                  minimumSize: const Size(68, 68),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

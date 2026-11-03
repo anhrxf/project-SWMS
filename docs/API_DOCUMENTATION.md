@@ -30,10 +30,10 @@ Token dikembalikan oleh register dan login. Gunakan `application/json` untuk req
 - Email wajib valid dan unik.
 - Nomor HP wajib, unik, dan memiliki panjang 9–20 karakter.
 - `address` opsional.
-- Aplikasi mengirim tautan verifikasi dengan masa berlaku 5 menit.
-- Respons menyertakan token akses, `email_verified: false`, dan `verification_url`.
+- Jika verifikasi email aktif, aplikasi mengirim tautan verifikasi dengan masa berlaku 5 menit.
+- Respons menyertakan token akses dan `email_verified: false`; tautan verifikasi hanya dikirim melalui email.
 - Tautan dapat dibuka tanpa login karena URL bertanda tangan dan kedaluwarsa.
-- Request API laporan ditolak dengan HTTP 403 sampai email diverifikasi.
+- Jika verifikasi email aktif, request API laporan ditolak dengan HTTP 403 sampai email diverifikasi.
 
 Request JSON:
 
@@ -48,7 +48,7 @@ Request JSON:
 }
 ```
 
-Respons mengandung `success`, `message`, `email_sent`, `verification_expires_at`, serta `data.user`, `data.token`, `data.token_type` (`Bearer`), `data.email_verified`, dan `data.verification_url`. Tautan berlaku 5 menit; `verification_expires_at` adalah waktu kedaluwarsa dalam ISO 8601. Jika `MAIL_MAILER=log`, `email_sent` bernilai `false`: pesan hanya ditulis ke log dan tidak masuk inbox. Respons register tetap berhasil karena akun sudah dibuat; atur SMTP lalu minta tautan baru.
+Respons mengandung `success`, `message`, `email_sent`, `verification_expires_at`, serta `data.user`, `data.token`, `data.token_type` (`Bearer`), dan `data.email_verified`. API tidak mengembalikan URL bertanda tangan untuk mencegah verifikasi email oleh pihak yang tidak menguasai inbox. Tautan berlaku 5 menit; `verification_expires_at` adalah waktu kedaluwarsa dalam ISO 8601. Jika `MAIL_MAILER=log`, `email_sent` bernilai `false`: pesan hanya ditulis ke log dan tidak masuk inbox. Respons register tetap berhasil karena akun sudah dibuat; atur SMTP lalu minta tautan baru.
 
 ### Login
 
@@ -85,11 +85,13 @@ Kredensial tidak cocok menghasilkan `401 Unauthorized` dengan pesan `Alamat emai
 - Jika sudah terverifikasi, sukses `200 OK` dengan pesan bahwa alamat telah diverifikasi.
 - Jika mailer masih `log`, respons `503 Service Unavailable` dengan `email_sent: false`; email hanya masuk ke `storage/logs/laravel.log`.
 
-Link verifikasi dikirim melalui email dan juga tersedia sebagai `verification_url` pada respons register. Link berlaku 5 menit dan memiliki signature. Endpoint kirim ulang mengembalikan `verification_expires_at` untuk waktu kedaluwarsa link terbaru. Buka URL tersebut di browser; login tidak diperlukan.
+Link verifikasi bertanda tangan hanya dikirim melalui email, berlaku 5 menit, dan dapat dibuka di browser tanpa login. API register tidak mengembalikan link tersebut. Endpoint kirim ulang mengembalikan `verification_expires_at` untuk waktu kedaluwarsa link terbaru.
 
 Mailer lokal pada `.env.example` menggunakan driver `log`; email verifikasi ditulis ke
 `storage/logs/laravel.log`, bukan dikirim ke inbox. Atur SMTP dan `APP_URL` publik untuk
-pengiriman nyata. Untuk Gmail, gunakan App Password dengan verifikasi dua langkah aktif,
+pengiriman nyata. Verifikasi email aktif secara default di luar environment `local`
+dan `testing`; atur `EMAIL_VERIFICATION_ENABLED` secara eksplisit pada deployment
+production. Untuk Gmail, gunakan App Password dengan verifikasi dua langkah aktif,
 bukan kata sandi akun Google.
 
 ## Klasifikasi gambar
@@ -130,6 +132,11 @@ Respons membungkus objek paginator Laravel di dalam `data`; objek tersebut menca
 
 Terautentikasi sebagai warga dengan email terverifikasi; akun admin atau akun belum terverifikasi menerima `403 Forbidden`. Request `multipart/form-data`.
 
+Pada aplikasi mobile, foto dapat diambil dengan kamera depan atau belakang
+menggunakan tombol balik kamera, atau dipilih dari galeri. Pemilihan kamera
+sepenuhnya ditangani klien dan tidak mengubah kontrak API: server menerima file
+foto hasilnya melalui field `image` tanpa field tambahan untuk jenis kamera.
+
 | Field | Validasi |
 |---|---|
 | `title` | Wajib, string, maksimum 255 karakter |
@@ -139,6 +146,31 @@ Terautentikasi sebagai warga dengan email terverifikasi; akun admin atau akun be
 | `latitude` | Opsional, numerik antara -90 dan 90 |
 | `longitude` | Opsional, numerik antara -180 dan 180 |
 | `location_address` | Opsional, string, maksimum 500 karakter |
+
+Contoh request:
+
+```bash
+curl -X POST "$API_BASE_URL/reports" \
+  -H "Authorization: $API_AUTHORIZATION" \
+  -H "Accept: application/json" \
+  -F "title=Tumpukan sampah di taman" \
+  -F "description=Sampah menumpuk dekat pintu masuk taman." \
+  -F "waste_category=organic" \
+  -F "image=@foto-laporan.jpg;type=image/jpeg" \
+  -F "latitude=-6.200000" \
+  -F "longitude=106.816666" \
+  -F "location_address=Jl. Merdeka"
+```
+
+Isi `API_AUTHORIZATION` dengan skema `Bearer` diikuti token akses dari register
+atau login.
+
+Jangan set header `Content-Type` secara manual; HTTP client harus menambahkan
+boundary `multipart/form-data`. Berhasil menghasilkan `201 Created` dengan
+`success`, `message`, `ai_prediction_status` (`classified` atau `uncertain`),
+dan `data` berisi laporan yang dibuat. Kategori hasil AI yang ragu tidak
+menghalangi pembuatan laporan; kategori yang disimpan tetap pilihan pada
+`waste_category`.
 
 Kategori AI selalu dihitung ulang oleh server dari file yang diunggah; nilai
 prediksi yang dikirim klien tidak digunakan. Jika AI yakin, kategori dan confidence
