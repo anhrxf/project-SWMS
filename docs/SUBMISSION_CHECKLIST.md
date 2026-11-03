@@ -17,7 +17,7 @@ pengumpulan.
 | Dataset dan sumber | Siap di repository | 150 foto (50 per kelas), atribusi dan SHA-256 di `machine-learning/training_photos/attributions.csv`; sumber dan lisensi Apache-2.0 dijelaskan di README dataset. |
 | Hasil evaluasi model | Siap di repository | `machine-learning/artifacts/evaluation.json`, `confusion_matrix.png`, `test_predictions.csv`, dan `training_history.json`. Akurasi test tercatat 91,30% pada 23 foto. |
 | Panduan instalasi dan penggunaan | Siap di repository | [`README.md`](../README.md), [`mobile/README.md`](../mobile/README.md), dan [`machine-learning/README.md`](../machine-learning/README.md). |
-| Video demo maksimal 10 menit | Belum direkam | Gunakan [`VIDEO_DEMO_SCRIPT.md`](./VIDEO_DEMO_SCRIPT.md); rekam maksimal 9 menit, unggah ke layanan yang dapat dibuka reviewer, lalu catat tautannya. |
+| Video demo maksimal 10 menit | Belum direkam | Gunakan naskah demo lokal; rekam maksimal 9 menit, unggah ke layanan yang dapat dibuka reviewer, lalu catat tautannya. |
 
 ## Pemeriksaan sebelum publikasi
 

@@ -375,7 +375,6 @@ project-SWMS/
 │   ├── ERD.md                          # Dokumentasi ERD & Kamus Data
 │   ├── API_DOCUMENTATION.md            # Dokumentasi Endpoint REST API
 │   ├── SUBMISSION_CHECKLIST.md         # Status dan daftar persiapan pengumpulan
-│   └── VIDEO_DEMO_SCRIPT.md            # Naskah video demo maksimal 10 menit
 ├── machine-learning/
 │   ├── training_photos/                # 150 foto dan manifest sumber/hash
 │   ├── download_training_photos.py     # Pengunduh dataset dengan revision tetap
@@ -412,7 +411,7 @@ project-SWMS/
 - [x] **Target akurasi 80%**: Evaluasi aktual mencapai 91,30% pada 23 sampel test; batasan dataset kecil dijelaskan di dokumentasi.
 - [ ] **Demo website publik**: Belum di-deploy; URL harus dilengkapi sebelum pengumpulan.
 - [ ] **APK release**: Belum dibuat; build setelah URL API production HTTPS tersedia dan uji di perangkat Android.
-- [ ] **Video demo (maks. 10 menit)**: Belum direkam; naskah 8–9 menit tersedia di [`docs/VIDEO_DEMO_SCRIPT.md`](./docs/VIDEO_DEMO_SCRIPT.md).
+- [ ] **Video demo (maks. 10 menit)**: Belum direkam; siapkan naskah demo lokal dan unggah video yang dapat diakses reviewer.
 - [x] **Panduan Instalasi**: Dokumentasi langkah demi langkah tersedia di README.
 - [ ] **Checklist pengumpulan**: Periksa status dan langkah publikasi pada [`docs/SUBMISSION_CHECKLIST.md`](./docs/SUBMISSION_CHECKLIST.md).
 

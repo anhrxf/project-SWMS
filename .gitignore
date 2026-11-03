@@ -31,3 +31,4 @@ __pycache__/
 *.pyc
 database/database.sqlite
 machine-learning/temp_*.jpg
+/docs/VIDEO_DEMO_SCRIPT.md
