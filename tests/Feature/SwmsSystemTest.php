@@ -530,7 +530,7 @@ class SwmsSystemTest extends TestCase
 
     public function test_user_can_create_report_with_image_and_ai_detection(): void
     {
-        Storage::fake('public');
+        Storage::fake('reports');
         $this->fakeMlPrediction();
 
         $user = User::where('email', 'user@swms.com')->first();
@@ -644,7 +644,7 @@ class SwmsSystemTest extends TestCase
 
     public function test_report_is_not_saved_when_ml_service_is_unavailable(): void
     {
-        Storage::fake('public');
+        Storage::fake('reports');
         Http::fake([
             '*' => Http::response(['detail' => 'Model is not loaded.'], 503),
         ]);
@@ -661,12 +661,33 @@ class SwmsSystemTest extends TestCase
         $this->assertDatabaseMissing('reports', [
             'title' => 'Laporan tanpa layanan AI',
         ]);
-        $this->assertSame([], Storage::disk('public')->allFiles('reports'));
+        $this->assertSame([], Storage::disk('reports')->allFiles('reports'));
+    }
+
+    public function test_report_image_is_served_only_with_a_valid_temporary_signature(): void
+    {
+        Storage::fake('reports');
+        Storage::disk('reports')->put('reports/private.jpg', 'private-image-content');
+
+        $user = User::where('email', 'user@swms.com')->firstOrFail();
+        $report = Report::create([
+            'user_id' => $user->id,
+            'title' => 'Foto privat',
+            'description' => 'Foto hanya dapat dibuka melalui URL sementara.',
+            'waste_category' => 'paper',
+            'image_path' => 'reports/private.jpg',
+            'status' => 'pending',
+        ]);
+
+        $this->get("/reports/{$report->id}/image")->assertForbidden();
+
+        $response = $this->get($report->image_url)->assertOk();
+        $this->assertSame('private-image-content', $response->streamedContent());
     }
 
     public function test_report_is_saved_with_manual_category_when_ai_is_uncertain(): void
     {
-        Storage::fake('public');
+        Storage::fake('reports');
         Http::fake([
             '*' => Http::response([
                 'success' => true,
@@ -695,12 +716,12 @@ class SwmsSystemTest extends TestCase
         $this->assertSame('paper', $report->waste_category);
         $this->assertNull($report->ai_detected_category);
         $this->assertNull($report->ai_confidence);
-        Storage::disk('public')->assertExists($report->image_path);
+        Storage::disk('reports')->assertExists($report->image_path);
     }
 
     public function test_api_report_is_saved_with_manual_category_when_ai_is_uncertain(): void
     {
-        Storage::fake('public');
+        Storage::fake('reports');
         Http::fake([
             '*' => Http::response([
                 'success' => true,
@@ -727,18 +748,19 @@ class SwmsSystemTest extends TestCase
         ])->assertCreated()
             ->assertJsonPath('ai_prediction_status', 'uncertain')
             ->assertJsonPath('data.ai_detected_category', null)
-            ->assertJsonPath('data.ai_confidence', null);
+            ->assertJsonPath('data.ai_confidence', null)
+            ->assertJsonStructure(['data' => ['image_url']]);
 
         $report = Report::where('title', 'Laporan API dengan klasifikasi meragukan')->firstOrFail();
         $this->assertSame('paper', $report->waste_category);
         $this->assertNull($report->ai_detected_category);
         $this->assertNull($report->ai_confidence);
-        Storage::disk('public')->assertExists($report->image_path);
+        Storage::disk('reports')->assertExists($report->image_path);
     }
 
     public function test_api_report_is_not_saved_when_ml_service_is_unavailable(): void
     {
-        Storage::fake('public');
+        Storage::fake('reports');
         Http::fake([
             '*' => Http::response(['detail' => 'Model is not loaded.'], 503),
         ]);
@@ -759,7 +781,7 @@ class SwmsSystemTest extends TestCase
         $this->assertDatabaseMissing('reports', [
             'title' => 'Laporan API tanpa layanan AI',
         ]);
-        $this->assertSame([], Storage::disk('public')->allFiles('reports'));
+        $this->assertSame([], Storage::disk('reports')->allFiles('reports'));
     }
 
     private function fakeMlPrediction(): void
@@ -859,7 +881,7 @@ class SwmsSystemTest extends TestCase
 
     public function test_admin_cannot_create_report(): void
     {
-        Storage::fake('public');
+        Storage::fake('reports');
 
         $admin = User::where('email', 'admin@swms.com')->first();
         

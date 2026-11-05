@@ -40,7 +40,7 @@ Request JSON:
 ```json
 {
   "name": "Budi Santoso",
-  "email": "budi@example.com",
+  "email": "budi@gmail.com",
   "phone": "081234567890",
   "address": "Jl. Merdeka No. 45",
   "password": "password123",
@@ -59,7 +59,7 @@ Request JSON:
 
 ```json
 {
-  "email": "budi@example.com",
+  "email": "budi@gmail.com",
   "password": "password123",
   "device_name": "Flutter_Android"
 }
@@ -183,8 +183,12 @@ Kegagalan layanan/model tetap menghasilkan `503` dan laporan tidak disimpan.
 Terautentikasi dengan email terverifikasi. Admin dapat melihat semua laporan; warga hanya dapat melihat laporan miliknya. Respons sukses `200 OK`:
 
 - `data.report`: detail laporan beserta relasi pengguna dan log status.
-- `data.image_url`: URL gambar.
+- `data.image_url`: URL gambar bertanda tangan yang berlaku selama 30 menit.
 - `data.recommendation`: rekomendasi berdasarkan kategori sampah.
+
+URL gambar pada laporan API (`image_url`) juga bersifat sementara. Ambil URL
+terbaru dari endpoint laporan sebelum menampilkan gambar; jangan menyimpan URL
+tersebut sebagai alamat permanen.
 
 Laporan tidak ditemukan menghasilkan `404 Not Found`; warga yang mencoba melihat laporan milik pengguna lain menerima `403 Forbidden`.
 

@@ -1,0 +1,13 @@
+.git
+.github
+.env
+.env.*
+!.env.example
+node_modules
+vendor
+machine-learning
+mobile
+storage/logs/*
+storage/framework/cache/*
+storage/framework/sessions/*
+storage/framework/views/*

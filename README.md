@@ -330,6 +330,28 @@ matrix sebelum menyatakan target akurasi 80% tercapai. URL API Laravel default a
 Tanpa checkpoint terlatih, layanan FastAPI gagal saat startup dan Laravel mengembalikan
 HTTP 503 untuk permintaan klasifikasi, tanpa menyimpan laporan atau foto yang gagal.
 
+### Penyimpanan foto produksi dengan Neon Object Storage
+
+Secara default, foto laporan disimpan lokal untuk development. Untuk deployment,
+aktifkan bucket privat Neon Object Storage dan atur environment variables Laravel:
+
+```text
+REPORTS_STORAGE_DRIVER=s3
+REPORTS_S3_KEY=<credential token ID>
+REPORTS_S3_SECRET=<credential secret>
+REPORTS_S3_REGION=<region dari endpoint Neon>
+REPORTS_S3_BUCKET=<nama bucket>
+REPORTS_S3_ENDPOINT=<S3 endpoint untuk branch Neon>
+REPORTS_S3_USE_PATH_STYLE_ENDPOINT=true
+```
+
+Jangan mengaktifkan akses baca publik. API dan website memberikan URL gambar
+bertanda tangan yang berlaku 30 menit; klien mobile perlu mengambil URL terbaru
+dari API. Neon Object Storage memakai protokol S3, sehingga Laravel memerlukan
+`league/flysystem-aws-s3-v3`. Setup bucket serta credential dilakukan melalui
+Neon Object Storage/CLI; simpan credential hanya di pengaturan environment host,
+bukan di `.env` yang di-commit.
+
 ---
 
 ## 6. Pengujian Otomatis

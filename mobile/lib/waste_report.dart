@@ -35,7 +35,7 @@ class WasteReport {
       description: json['description']?.toString() ?? '',
       category: json['waste_category']?.toString() ?? 'other',
       status: json['status']?.toString() ?? 'pending',
-      imagePath: json['image_path']?.toString() ?? '',
+      imagePath: json['image_url']?.toString() ?? json['image_path']?.toString() ?? '',
       createdAt: DateTime.tryParse(json['created_at']?.toString() ?? ''),
       address: json['location_address']?.toString(),
       latitude: _asDouble(json['latitude']),

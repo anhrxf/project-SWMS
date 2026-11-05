@@ -6,10 +6,13 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\URL;
 
 class Report extends Model
 {
     use HasFactory;
+
+    protected $appends = ['image_url'];
 
     protected $fillable = [
         'user_id',
@@ -52,7 +55,16 @@ class Report extends Model
         if (filter_var($this->image_path, FILTER_VALIDATE_URL)) {
             return $this->image_path;
         }
-        return asset('storage/' . $this->image_path);
+
+        if (! $this->image_path || ! $this->exists) {
+            return '';
+        }
+
+        return URL::temporarySignedRoute(
+            'reports.image',
+            now()->addMinutes(30),
+            ['report' => $this->getKey()],
+        );
     }
 
     public function getCategoryBadgeAttribute(): string

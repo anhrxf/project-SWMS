@@ -47,6 +47,27 @@ return [
             'report' => false,
         ],
 
+        'reports' => env('REPORTS_STORAGE_DRIVER', 'local') === 's3'
+            ? [
+                'driver' => 's3',
+                'key' => env('REPORTS_S3_KEY'),
+                'secret' => env('REPORTS_S3_SECRET'),
+                'region' => env('REPORTS_S3_REGION', 'us-east-2'),
+                'bucket' => env('REPORTS_S3_BUCKET'),
+                'endpoint' => env('REPORTS_S3_ENDPOINT'),
+                'use_path_style_endpoint' => env('REPORTS_S3_USE_PATH_STYLE_ENDPOINT', true),
+                'throw' => true,
+                'report' => true,
+            ]
+            : [
+                'driver' => 'local',
+                'root' => storage_path('app/public'),
+                'url' => rtrim(env('APP_URL', 'http://localhost'), '/').'/storage',
+                'visibility' => 'public',
+                'throw' => true,
+                'report' => true,
+            ],
+
         's3' => [
             'driver' => 's3',
             'key' => env('AWS_ACCESS_KEY_ID'),

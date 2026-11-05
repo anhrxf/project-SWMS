@@ -9,7 +9,6 @@ use App\Services\WasteClassificationException;
 use App\Services\WasteClassifierService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 
 class ApiReportController extends Controller
 {
@@ -22,7 +21,7 @@ class ApiReportController extends Controller
         $user = $request->user();
         $query = Report::with(['user:id,name,email', 'statusLogs'])->latest();
 
-        if (!$user->isAdmin()) {
+        if (! $user->isAdmin()) {
             $query->where('user_id', $user->id);
         }
 
@@ -38,8 +37,8 @@ class ApiReportController extends Controller
             $search = $request->input('search');
             $query->where(function ($q) use ($search) {
                 $q->where('title', 'like', "%{$search}%")
-                  ->orWhere('description', 'like', "%{$search}%")
-                  ->orWhere('location_address', 'like', "%{$search}%");
+                    ->orWhere('description', 'like', "%{$search}%")
+                    ->orWhere('location_address', 'like', "%{$search}%");
             });
         }
 
@@ -70,19 +69,16 @@ class ApiReportController extends Controller
             'location_address' => ['nullable', 'string', 'max:500'],
         ]);
 
-        $imagePath = $request->file('image')->store('reports', 'public');
-        $fullPath = Storage::disk('public')->path($imagePath);
-
         try {
-            $analysis = $this->classifier->classify($fullPath);
+            $analysis = $this->classifier->classify($request->file('image')->getRealPath());
         } catch (WasteClassificationException $exception) {
-            Storage::disk('public')->delete($imagePath);
-
             return response()->json([
                 'success' => false,
                 'message' => $exception->getMessage(),
             ], $exception->statusCode);
         }
+
+        $imagePath = $request->file('image')->store('reports', 'reports');
 
         $report = Report::create([
             'user_id' => $request->user()->id,
@@ -119,7 +115,7 @@ class ApiReportController extends Controller
     public function show(Request $request, Report $report): JsonResponse
     {
         $user = $request->user();
-        if (!$user->isAdmin() && $report->user_id !== $user->id) {
+        if (! $user->isAdmin() && $report->user_id !== $user->id) {
             return response()->json([
                 'success' => false,
                 'message' => 'Akses ditolak.',
@@ -142,7 +138,7 @@ class ApiReportController extends Controller
     public function updateStatus(Request $request, Report $report): JsonResponse
     {
         $user = $request->user();
-        if (!$user->isAdmin()) {
+        if (! $user->isAdmin()) {
             return response()->json([
                 'success' => false,
                 'message' => 'Hanya Admin yang dapat mengubah status laporan.',

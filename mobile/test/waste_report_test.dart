@@ -33,6 +33,16 @@ void main() {
     );
   });
 
+  test('prefers the temporary image URL returned by the API', () {
+    final report = WasteReport.fromJson({
+      'id': 7,
+      'image_path': 'reports/7.jpg',
+      'image_url': 'https://swms.example/reports/7/image?signature=temporary',
+    });
+
+    expect(report.imagePath, startsWith('https://swms.example/'));
+  });
+
   test('provides Indonesian labels for known statuses and categories', () {
     expect(WasteReport.categoryLabel('paper'), 'Kertas');
     expect(WasteReport.statusLabel('completed'), 'Selesai');

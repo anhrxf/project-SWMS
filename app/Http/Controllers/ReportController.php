@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ReportController extends Controller
 {
@@ -26,7 +27,7 @@ class ReportController extends Controller
         $query = Report::with(['user', 'statusLogs'])->latest();
 
         // Non-admin only sees own reports
-        if (!$isAdmin) {
+        if (! $isAdmin) {
             $query->where('user_id', $user->id);
         }
 
@@ -35,11 +36,11 @@ class ReportController extends Controller
             $search = $request->input('search');
             $query->where(function ($q) use ($search) {
                 $q->where('title', 'like', "%{$search}%")
-                  ->orWhere('description', 'like', "%{$search}%")
-                  ->orWhere('location_address', 'like', "%{$search}%")
-                  ->orWhereHas('user', function ($uq) use ($search) {
-                      $uq->where('name', 'like', "%{$search}%");
-                  });
+                    ->orWhere('description', 'like', "%{$search}%")
+                    ->orWhere('location_address', 'like', "%{$search}%")
+                    ->orWhereHas('user', function ($uq) use ($search) {
+                        $uq->where('name', 'like', "%{$search}%");
+                    });
             });
         }
 
@@ -65,7 +66,7 @@ class ReportController extends Controller
 
         // Status counts for quick filters
         $baseCountQuery = Report::query();
-        if (!$isAdmin) {
+        if (! $isAdmin) {
             $baseCountQuery->where('user_id', $user->id);
         }
         $statusCounts = [
@@ -118,18 +119,15 @@ class ReportController extends Controller
             'image.max' => 'Ukuran gambar maksimal 10MB.',
         ]);
 
-        $imagePath = $request->file('image')->store('reports', 'public');
-        $fullPath = Storage::disk('public')->path($imagePath);
-
         try {
-            $analysis = $this->classifier->classify($fullPath);
+            $analysis = $this->classifier->classify($request->file('image')->getRealPath());
         } catch (WasteClassificationException $exception) {
-            Storage::disk('public')->delete($imagePath);
-
             return back()
                 ->withInput()
                 ->withErrors(['image' => $exception->getMessage()]);
         }
+
+        $imagePath = $request->file('image')->store('reports', 'reports');
 
         $report = Report::create([
             'user_id' => Auth::id(),
@@ -151,14 +149,14 @@ class ReportController extends Controller
             'user_id' => Auth::id(),
             'previous_status' => null,
             'new_status' => 'pending',
-            'notes' => 'Laporan berhasil dibuat oleh ' . Auth::user()->name . '.',
+            'notes' => 'Laporan berhasil dibuat oleh '.Auth::user()->name.'.',
         ]);
 
         return redirect()->route('reports.show', $report)
             ->with(
                 'success',
                 'Laporan sampah berhasil dikirim! Tim operasional akan segera menindaklanjuti.'
-                . ($analysis['status'] === 'uncertain' ? ' AI tidak cukup yakin; kategori laporan mengikuti pilihan Anda.' : '')
+                .($analysis['status'] === 'uncertain' ? ' AI tidak cukup yakin; kategori laporan mengikuti pilihan Anda.' : '')
             )
             ->with('clear_report_draft', true);
     }
@@ -166,7 +164,7 @@ class ReportController extends Controller
     public function show(Report $report): View
     {
         $user = Auth::user();
-        if (!$user->isAdmin() && $report->user_id !== $user->id) {
+        if (! $user->isAdmin() && $report->user_id !== $user->id) {
             abort(403, 'Anda tidak berhak melihat laporan ini.');
         }
 
@@ -177,6 +175,19 @@ class ReportController extends Controller
             'report' => $report,
             'recommendation' => $recommendation,
             'isAdmin' => $user->isAdmin(),
+        ]);
+    }
+
+    public function image(Report $report): StreamedResponse
+    {
+        abort_unless(
+            $report->image_path && Storage::disk('reports')->exists($report->image_path),
+            404,
+        );
+
+        return Storage::disk('reports')->response($report->image_path, headers: [
+            'Cache-Control' => 'private, max-age=900',
+            'X-Content-Type-Options' => 'nosniff',
         ]);
     }
 
@@ -219,18 +230,15 @@ class ReportController extends Controller
         ];
 
         if ($request->hasFile('image')) {
-            $imagePath = $request->file('image')->store('reports', 'public');
-            $fullPath = Storage::disk('public')->path($imagePath);
             try {
-                $analysis = $this->classifier->classify($fullPath);
+                $analysis = $this->classifier->classify($request->file('image')->getRealPath());
             } catch (WasteClassificationException $exception) {
-                Storage::disk('public')->delete($imagePath);
-
                 return back()
                     ->withInput()
                     ->withErrors(['image' => $exception->getMessage()]);
             }
 
+            $imagePath = $request->file('image')->store('reports', 'reports');
             $updateData['image_path'] = $imagePath;
             $updateData['ai_detected_category'] = $analysis['category'];
             $updateData['ai_confidence'] = $analysis['confidence'];
@@ -242,9 +250,9 @@ class ReportController extends Controller
         if (
             isset($imagePath)
             && $previousImagePath
-            && Storage::disk('public')->exists($previousImagePath)
+            && Storage::disk('reports')->exists($previousImagePath)
         ) {
-            Storage::disk('public')->delete($previousImagePath);
+            Storage::disk('reports')->delete($previousImagePath);
         }
 
         return redirect()->route('reports.show', $report)
@@ -258,8 +266,8 @@ class ReportController extends Controller
             abort(403, 'Laporan hanya dapat dibatalkan atau dihapus oleh pelapor aslinya selama status masih Pending.');
         }
 
-        if ($report->image_path && Storage::disk('public')->exists($report->image_path)) {
-            Storage::disk('public')->delete($report->image_path);
+        if ($report->image_path && Storage::disk('reports')->exists($report->image_path)) {
+            Storage::disk('reports')->delete($report->image_path);
         }
 
         $report->delete();
@@ -271,7 +279,7 @@ class ReportController extends Controller
     public function updateStatus(Request $request, Report $report): RedirectResponse
     {
         $user = Auth::user();
-        if (!$user->isAdmin()) {
+        if (! $user->isAdmin()) {
             abort(403, 'Hanya Administrator yang dapat mengubah status laporan.');
         }
 
@@ -302,7 +310,7 @@ class ReportController extends Controller
             'user_id' => $user->id,
             'previous_status' => $oldStatus,
             'new_status' => $newStatus,
-            'notes' => $notes ?: 'Status diubah menjadi ' . $report->status_label . ' oleh Administrator.',
+            'notes' => $notes ?: 'Status diubah menjadi '.$report->status_label.' oleh Administrator.',
         ]);
 
         return redirect()->route('reports.show', $report)

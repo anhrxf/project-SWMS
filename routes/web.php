@@ -25,6 +25,10 @@ Route::get('/email/verify/{id}/{hash}', [EmailVerificationController::class, 've
     ->middleware(['signed', 'throttle:6,1'])
     ->name('verification.verify');
 
+Route::get('/reports/{report}/image', [ReportController::class, 'image'])
+    ->middleware('signed')
+    ->name('reports.image');
+
 // Authenticated Routes
 Route::middleware('auth')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
