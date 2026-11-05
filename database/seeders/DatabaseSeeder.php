@@ -22,10 +22,10 @@ class DatabaseSeeder extends Seeder
 
         // 1. Create Default Admin User
         $admin = User::firstOrCreate(
-            ['email' => 'admin@swms.com'],
+            ['email' => 'swms.admin@gmail.com'],
             [
                 'name' => 'Administrator SWMS',
-                'password' => Hash::make('password'),
+                'password' => Hash::make('admin.swms2026'),
                 'role' => 'admin',
                 'phone' => '081234567890',
                 'address' => 'Kantor Dinas Lingkungan Hidup, Lantai 2',
@@ -59,14 +59,14 @@ class DatabaseSeeder extends Seeder
         );
 
         foreach ([$admin, $user1, $user2] as $demoUser) {
-            if (!$demoUser->hasVerifiedEmail()) {
+            if (! $demoUser->hasVerifiedEmail()) {
                 $demoUser->markEmailAsVerified();
             }
         }
 
         // 3. Generate Realistic Sample Images via GD
         $reportsDir = storage_path('app/public/reports');
-        if (!file_exists($reportsDir)) {
+        if (! file_exists($reportsDir)) {
             mkdir($reportsDir, 0777, true);
         }
 
@@ -80,12 +80,12 @@ class DatabaseSeeder extends Seeder
         ];
 
         foreach ($imageFiles as $filename => $meta) {
-            $path = $reportsDir . '/' . $filename;
-            if (!file_exists($path) && extension_loaded('gd')) {
+            $path = $reportsDir.'/'.$filename;
+            if (! file_exists($path) && extension_loaded('gd')) {
                 $im = imagecreatetruecolor(600, 400);
                 $bg = imagecolorallocate($im, $meta['color'][0], $meta['color'][1], $meta['color'][2]);
                 imagefill($im, 0, 0, $bg);
-                
+
                 // Add texture pattern
                 $patternColor = imagecolorallocate($im, 255, 255, 255);
                 for ($i = 0; $i < 400; $i += 40) {
@@ -230,7 +230,7 @@ class DatabaseSeeder extends Seeder
                 $repData
             );
 
-            if (!$report->wasRecentlyCreated) {
+            if (! $report->wasRecentlyCreated) {
                 continue;
             }
 

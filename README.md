@@ -174,7 +174,7 @@ Seeder akun demo mendukung fitur **1-Klik Isi Kredensial** pada halaman login:
 
 | Peran | Alamat Email | Kata Sandi | Deskripsi Akses |
 | :--- | :--- | :--- | :--- |
-| **Administrator** | `admin@swms.com` | `password` | Hak akses penuh: Dashboard analitik seluruh kota, update status, manajemen pengguna |
+| **Administrator** | `swms.admin@gmail.com` | `admin.swms2026` | Hak akses penuh: Dashboard analitik seluruh kota, update status, manajemen pengguna |
 | **Warga / User 1**| `user@swms.com` | `password` | Pengguna warga: Buat laporan, kelola laporan pribadi, uji coba AI |
 | **Warga / User 2**| `siti@swms.com` | `password` | Pengguna warga kedua dengan data laporan terdaftar |
 

@@ -17,10 +17,26 @@
         <span class="px-3 py-1 rounded-full text-xs font-bold bg-white/10 border border-white/20">Bearer token · Laravel Sanctum</span>
     </div>
 
-    <div class="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 space-y-2">
+    <div class="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 space-y-3">
         <h3 class="text-sm font-bold text-emerald-950">Autentikasi dan format request</h3>
         <p class="text-xs text-emerald-900">Endpoint terautentikasi memerlukan header <code class="rounded bg-white px-1.5 py-0.5 font-mono">Authorization: Bearer &lt;token&gt;</code> dan <code class="rounded bg-white px-1.5 py-0.5 font-mono">Accept: application/json</code>. Token diperoleh dari register atau login.</p>
         <p class="text-xs text-emerald-900">Gunakan JSON untuk request biasa. Untuk unggah gambar, gunakan <code class="rounded bg-white px-1.5 py-0.5 font-mono">multipart/form-data</code>; biarkan aplikasi klien mengatur boundary Content-Type.</p>
+
+        <div class="pt-2 border-t border-emerald-200/80">
+            <h4 class="text-xs font-bold text-emerald-950 mb-1.5">Kredensial Default untuk Pengujian API:</h4>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                <div class="bg-white p-2.5 rounded-xl border border-emerald-200">
+                    <span class="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-800 mb-1">Administrator</span>
+                    <p class="font-mono text-[11px] text-slate-800">Email: <strong>swms.admin@gmail.com</strong></p>
+                    <p class="font-mono text-[11px] text-slate-800">Password: <strong>admin.swms2026</strong></p>
+                </div>
+                <div class="bg-white p-2.5 rounded-xl border border-emerald-200">
+                    <span class="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 mb-1">Warga (User)</span>
+                    <p class="font-mono text-[11px] text-slate-800">Email: <strong>user@swms.com</strong></p>
+                    <p class="font-mono text-[11px] text-slate-800">Password: <strong>password</strong></p>
+                </div>
+            </div>
+        </div>
     </div>
 
     <div class="space-y-4">

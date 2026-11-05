@@ -22,6 +22,13 @@ Accept: application/json
 
 Token dikembalikan oleh register dan login. Gunakan `application/json` untuk request biasa. Untuk request yang mengunggah gambar, gunakan `multipart/form-data` dan biarkan HTTP client menentukan boundary `Content-Type`.
 
+### Kredensial default untuk pengujian API
+
+| Peran | Email | Kata Sandi | Keterangan |
+|---|---|---|---|
+| **Administrator** | `swms.admin@gmail.com` | `admin.swms2026` | Hak akses penuh: manajemen laporan semua warga, update status laporan (`POST /reports/{report}/status`) |
+| **Warga (User)** | `user@swms.com` | `password` | Pengguna biasa: kirim laporan sampah, lihat riwayat laporan sendiri |
+
 ## Endpoint autentikasi
 
 ### Register

@@ -4,8 +4,8 @@ namespace Tests\Feature;
 
 use App\Models\Report;
 use App\Models\User;
-use Database\Seeders\DatabaseSeeder;
 use App\Notifications\VerifyEmailNotification;
+use Database\Seeders\DatabaseSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
@@ -42,7 +42,7 @@ class SwmsSystemTest extends TestCase
             ->assertSee('name="login_email"', false)
             ->assertSee('autocomplete="off"', false)
             ->assertSee('autocomplete="new-password"', false)
-            ->assertDontSee('value="admin@swms.com"', false)
+            ->assertDontSee('value="swms.admin@gmail.com"', false)
             ->assertDontSee('name="password" value=', false);
 
         $this->withCookie('last_login_email', 'user@swms.com')
@@ -50,7 +50,7 @@ class SwmsSystemTest extends TestCase
             ->assertOk()
             ->assertSee('name="login_email"', false)
             ->assertSee('value="user@swms.com"', false)
-            ->assertDontSee('value="admin@swms.com"', false)
+            ->assertDontSee('value="swms.admin@gmail.com"', false)
             ->assertDontSee('name="password" value=', false);
     }
 
@@ -71,25 +71,25 @@ class SwmsSystemTest extends TestCase
     public function test_user_can_login_with_valid_credentials(): void
     {
         $response = $this->post('/login', [
-            'login_email' => 'admin@swms.com',
-            'password' => 'password',
+            'login_email' => 'swms.admin@gmail.com',
+            'password' => 'admin.swms2026',
         ]);
 
         $response->assertRedirect('/dashboard');
-        $response->assertCookie('last_login_email', 'admin@swms.com');
+        $response->assertCookie('last_login_email', 'swms.admin@gmail.com');
         $this->assertAuthenticated();
     }
 
     public function test_user_cannot_login_with_invalid_credentials(): void
     {
         $response = $this->post('/login', [
-            'email' => 'admin@swms.com',
+            'email' => 'swms.admin@gmail.com',
             'password' => 'wrongpassword',
         ]);
 
         $response->assertSessionHasErrors([
             'email' => 'Alamat email salah.',
-        ])->assertCookie('last_login_email', 'admin@swms.com');
+        ])->assertCookie('last_login_email', 'swms.admin@gmail.com');
         $this->assertGuest();
     }
 
@@ -157,7 +157,7 @@ class SwmsSystemTest extends TestCase
             'email' => $user->email,
             'password' => 'password',
         ])->assertRedirect('/dashboard')
-            ->assertSessionHas('success', 'Selamat datang kembali, ' . $user->name . '!');
+            ->assertSessionHas('success', 'Selamat datang kembali, '.$user->name.'!');
 
         $this->get('/dashboard')->assertOk();
     }
@@ -220,7 +220,7 @@ class SwmsSystemTest extends TestCase
         Notification::fake();
         $user = User::factory()->unverified()->create();
         $token = $user->createToken('test-device')->plainTextToken;
-        $headers = ['Authorization' => 'Bearer ' . $token, 'Accept' => 'application/json'];
+        $headers = ['Authorization' => 'Bearer '.$token, 'Accept' => 'application/json'];
 
         $this->withHeaders($headers)->getJson('/api/v1/reports')
             ->assertForbidden();
@@ -445,7 +445,7 @@ class SwmsSystemTest extends TestCase
 
     public function test_admin_can_access_dashboard_and_users(): void
     {
-        $admin = User::where('email', 'admin@swms.com')->first();
+        $admin = User::where('email', 'swms.admin@gmail.com')->first();
         $response = $this->actingAs($admin)->get('/dashboard');
         $response->assertStatus(200);
 
@@ -516,7 +516,7 @@ class SwmsSystemTest extends TestCase
 
         $this->app->make(DatabaseSeeder::class)->run();
 
-        $this->assertDatabaseMissing('users', ['email' => 'admin@swms.com']);
+        $this->assertDatabaseMissing('users', ['email' => 'swms.admin@gmail.com']);
         $this->assertDatabaseCount('reports', 0);
     }
 
@@ -568,7 +568,7 @@ class SwmsSystemTest extends TestCase
 
     public function test_admin_can_update_report_status_with_notes(): void
     {
-        $admin = User::where('email', 'admin@swms.com')->first();
+        $admin = User::where('email', 'swms.admin@gmail.com')->first();
         $report = Report::where('status', 'pending')->first();
 
         $response = $this->actingAs($admin)->post("/reports/{$report->id}/status", [
@@ -806,7 +806,7 @@ class SwmsSystemTest extends TestCase
     public function test_ai_lab_displays_the_saved_evaluation_report(): void
     {
         $evaluationPath = base_path('machine-learning/artifacts/evaluation.json');
-        if (!is_file($evaluationPath)) {
+        if (! is_file($evaluationPath)) {
             $this->markTestSkipped('Train the model to generate its evaluation report.');
         }
 
@@ -816,12 +816,12 @@ class SwmsSystemTest extends TestCase
             512,
             JSON_THROW_ON_ERROR,
         );
-        $admin = User::where('email', 'admin@swms.com')->first();
+        $admin = User::where('email', 'swms.admin@gmail.com')->first();
 
         $this->actingAs($admin)
             ->get('/ai-lab')
             ->assertOk()
-            ->assertSee(number_format($evaluation['test_accuracy'] * 100, 2) . '%')
+            ->assertSee(number_format($evaluation['test_accuracy'] * 100, 2).'%')
             ->assertSee('Confusion matrix')
             ->assertSee('Macro average / akurasi');
     }
@@ -858,7 +858,7 @@ class SwmsSystemTest extends TestCase
         $this->assertNotEmpty($token);
 
         // Fetch reports via API
-        $reportsRes = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $reportsRes = $this->withHeader('Authorization', 'Bearer '.$token)
             ->getJson('/api/v1/reports');
 
         $reportsRes->assertStatus(200);
@@ -873,7 +873,7 @@ class SwmsSystemTest extends TestCase
     public function test_api_login_returns_requested_invalid_credentials_message(): void
     {
         $this->postJson('/api/v1/auth/login', [
-            'email' => 'admin@swms.com',
+            'email' => 'swms.admin@gmail.com',
             'password' => 'wrong-password',
         ])->assertUnauthorized()
             ->assertJsonPath('message', 'Alamat email salah.');
@@ -883,8 +883,8 @@ class SwmsSystemTest extends TestCase
     {
         Storage::fake('reports');
 
-        $admin = User::where('email', 'admin@swms.com')->first();
-        
+        $admin = User::where('email', 'swms.admin@gmail.com')->first();
+
         // Admin gets redirected if visiting create form
         $createPageResponse = $this->actingAs($admin)->get('/reports/create');
         $createPageResponse->assertRedirect('/reports');
@@ -908,7 +908,7 @@ class SwmsSystemTest extends TestCase
 
     public function test_admin_cannot_edit_citizen_report(): void
     {
-        $admin = User::where('email', 'admin@swms.com')->first();
+        $admin = User::where('email', 'swms.admin@gmail.com')->first();
         $citizenReport = Report::where('status', 'pending')->first();
 
         $response = $this->actingAs($admin)->get("/reports/{$citizenReport->id}/edit");
