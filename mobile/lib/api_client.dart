@@ -186,10 +186,11 @@ class ApiClient {
     required Uint8List bytes,
     required String filename,
   }) async {
+    final safeFilename = filename.contains('.') ? filename : '$filename.jpg';
     final request = http.MultipartRequest('POST', _uri('ai/classify'))
       ..headers['Accept'] = 'application/json'
       ..files.add(
-        http.MultipartFile.fromBytes('image', bytes, filename: filename),
+        http.MultipartFile.fromBytes('image', bytes, filename: safeFilename),
       );
 
     try {
@@ -242,7 +243,11 @@ class ApiClient {
         'waste_category': category,
       })
       ..files.add(
-        http.MultipartFile.fromBytes('image', imageBytes, filename: filename),
+        http.MultipartFile.fromBytes(
+          'image',
+          imageBytes,
+          filename: filename.contains('.') ? filename : '$filename.jpg',
+        ),
       );
 
     if (latitude != null) request.fields['latitude'] = latitude.toString();

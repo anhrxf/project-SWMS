@@ -722,7 +722,7 @@
 
                 try {
                     const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
-                    const res = await fetch('{{ route('ai.classify') }}', {
+                    const res = await fetch('{{ route('ai.classify', [], false) }}', {
                         method: 'POST',
                         headers: {
                             'X-CSRF-TOKEN': csrfToken,

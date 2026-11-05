@@ -67,6 +67,13 @@ class ApiReportController extends Controller
             'latitude' => ['nullable', 'numeric', 'between:-90,90'],
             'longitude' => ['nullable', 'numeric', 'between:-180,180'],
             'location_address' => ['nullable', 'string', 'max:500'],
+        ], [
+            'title.required' => 'Judul laporan wajib diisi.',
+            'description.required' => 'Deskripsi sampah wajib diisi.',
+            'waste_category.required' => 'Kategori sampah wajib dipilih.',
+            'image.required' => 'Foto sampah wajib diunggah.',
+            'image.image' => 'File harus berupa gambar.',
+            'image.max' => 'Ukuran gambar maksimal 10MB.',
         ]);
 
         try {

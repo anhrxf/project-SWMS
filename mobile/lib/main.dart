@@ -713,7 +713,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
 
   Future<void> _pickImage(ImageSource source) async {
     try {
-      final selected = source == ImageSource.camera
+      final selected = (source == ImageSource.camera && !kIsWeb)
           ? await Navigator.of(context).push<XFile>(
               MaterialPageRoute(builder: (_) => const CameraCaptureScreen()),
             )
@@ -732,6 +732,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
         _aiResult = null;
         _error = null;
       });
+      await _classify();
     } catch (error, stackTrace) {
       debugPrint('Gagal memilih foto: $error\n$stackTrace');
       if (mounted) {
