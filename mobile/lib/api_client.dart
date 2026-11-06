@@ -1,13 +1,20 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 
-const apiBaseUrl = String.fromEnvironment(
-  'API_BASE_URL',
-  defaultValue: 'http://127.0.0.1:8000/api/v1',
-);
+const _envApiBaseUrl = String.fromEnvironment('API_BASE_URL');
+
+String get apiBaseUrl {
+  if (_envApiBaseUrl.isNotEmpty) return _envApiBaseUrl;
+  if (kIsWeb) {
+    final origin = Uri.base.origin;
+    return '$origin/api/v1';
+  }
+  return 'http://127.0.0.1:8000/api/v1';
+}
 
 class ApiException implements Exception {
   const ApiException(this.message, {this.statusCode, this.errors});
