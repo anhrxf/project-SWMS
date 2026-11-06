@@ -15,7 +15,7 @@ class WasteClassifierService
      */
     public function classify(string $imagePath): array
     {
-        if (!is_file($imagePath) || !is_readable($imagePath)) {
+        if (! is_file($imagePath) || ! is_readable($imagePath)) {
             throw new WasteClassificationException('File gambar tidak dapat dibaca.');
         }
 
@@ -25,7 +25,7 @@ class WasteClassifierService
         }
 
         $url = config('services.ml.url');
-        if (!is_string($url) || $url === '') {
+        if (! is_string($url) || $url === '') {
             throw new WasteClassificationException('URL layanan klasifikasi AI belum dikonfigurasi.');
         }
 
@@ -46,7 +46,7 @@ class WasteClassifierService
             );
         }
 
-        if (!$response->successful()) {
+        if (! $response->successful()) {
             Log::error('Waste classification service returned an error.', [
                 'status' => $response->status(),
             ]);
@@ -66,15 +66,16 @@ class WasteClassifierService
         $category = is_array($data) ? ($data['category'] ?? null) : null;
         $confidence = is_array($data) ? ($data['confidence'] ?? null) : null;
         $breakdown = is_array($data) ? ($data['breakdown'] ?? null) : null;
-        $categories = ['organic', 'plastic', 'paper'];
+        $breakdownCategories = ['organic', 'plastic', 'paper'];
+        $validCategories = ['organic', 'plastic', 'paper', 'other'];
 
         if (
-            !in_array($status, ['classified', 'uncertain'], true)
-            || !is_numeric($confidence)
+            ! in_array($status, ['classified', 'uncertain'], true)
+            || ! is_numeric($confidence)
             || (float) $confidence < 0
             || (float) $confidence > 100
-            || !is_array($breakdown)
-            || !is_string($data['message'] ?? null)
+            || ! is_array($breakdown)
+            || ! is_string($data['message'] ?? null)
         ) {
             Log::error('Waste classification service returned an invalid prediction.');
 
@@ -82,7 +83,7 @@ class WasteClassifierService
         }
 
         if (
-            ($status === 'classified' && (!is_string($category) || !in_array($category, $categories, true)))
+            ($status === 'classified' && (! is_string($category) || ! in_array($category, $validCategories, true)))
             || ($status === 'uncertain' && $category !== null)
         ) {
             Log::error('Waste classification service returned an invalid classification status.');
@@ -91,9 +92,9 @@ class WasteClassifierService
         }
 
         $normalizedBreakdown = [];
-        foreach ($categories as $name) {
+        foreach ($breakdownCategories as $name) {
             $value = $breakdown[$name] ?? null;
-            if (!is_numeric($value) || (float) $value < 0 || (float) $value > 100) {
+            if (! is_numeric($value) || (float) $value < 0 || (float) $value > 100) {
                 Log::error('Waste classification service returned an invalid probability breakdown.');
 
                 throw new WasteClassificationException('Layanan klasifikasi AI mengembalikan hasil yang tidak valid.');
@@ -119,6 +120,7 @@ class WasteClassifierService
             'organic' => 'Sampah Organik (Organic Waste)',
             'plastic' => 'Sampah Plastik (Plastic Waste)',
             'paper' => 'Sampah Kertas & Karton (Paper Waste)',
+            'other' => 'Sampah Campuran (Mixed Waste)',
             default => 'Sampah Umum / Lainnya',
         };
     }
@@ -143,6 +145,12 @@ class WasteClassifierService
                 'action' => 'Pastikan kering dan tidak terkena minyak atau air. Lipat kardus/kertas rapi untuk didistribusikan ke pengepul atau bank sampah.',
                 'color_code' => '#f59e0b',
                 'bin' => 'Tempat Sampah Biru (Kertas)',
+            ],
+            'other' => [
+                'type' => 'Pemisahan Sampah / TPS3R',
+                'action' => 'Tumpukan terdeteksi berisi campuran berbagai jenis sampah. Pisahkan sampah organik dari plastik dan kertas sebelum disalurkan ke TPS3R.',
+                'color_code' => '#8b5cf6',
+                'bin' => 'Tempat Sampah Terpilah / Residu',
             ],
             default => [
                 'type' => 'Penanganan Khusus / Residu',

@@ -108,14 +108,11 @@ bukan kata sandi akun Google.
 Publik, tidak memerlukan token. Request `multipart/form-data` berisi field wajib `image` (JPEG, PNG, JPG, atau WEBP; maksimum 10 MB).
 
 Berhasil diproses menghasilkan `200 OK` dengan `success`, `message`, dan `data`.
-Kategori hanya ditetapkan bila skor keluaran model minimal 70% dan prediksi pada
-foto asli serta foto yang dibalik horizontal sama. Jika tidak, respons tetap `200`,
-`data.status` bernilai `uncertain`, `data.category` dan `data.recommendation` bernilai
-`null`; jangan tampilkan skor kelas sebagai hasil pasti. Model hanya membedakan
-organic, plastic, dan paper, sehingga bukan pemeriksa umum untuk semua objek.
-Jika layanan/model AI tidak tersedia, endpoint mengembalikan `503 Service
-Unavailable`; gambar yang tidak dapat diproses mengembalikan `422 Unprocessable
-Content`.
+Kategori yang dapat dideteksi meliputi `organic`, `plastic`, `paper`, serta `other` (Sampah Campuran / Mixed Waste).
+- Untuk kategori spesifik (`organic`, `plastic`, `paper`), kategori ditetapkan bila skor keluaran model minimal 70% dan konsisten pada dua sudut pandang.
+- Untuk tumpukan sampah campuran (`other`), sistem mendeteksi kehadiran multikategori sampah secara spasial (multi-region / patch analysis) dan distribusi kelas campuran. Ketika terdeteksi campuran beberapa kategori sampah (misal terdapat plastik bersama organik atau kertas), AI menetapkan kategori `other` (Sampah Campuran) dengan rekomendasi pemilahan dan penyaluran ke TPS3R.
+- Jika gambar tidak memiliki bukti kategori yang cukup atau tidak dapat diidentifikasi, respons tetap `200`, `data.status` bernilai `uncertain`, `data.category` dan `data.recommendation` bernilai `null`; jangan tampilkan skor kelas sebagai hasil pasti.
+Jika layanan/model AI tidak tersedia, endpoint mengembalikan `503 Service Unavailable`; gambar yang tidak dapat diproses mengembalikan `422 Unprocessable Content`.
 
 ## Laporan
 

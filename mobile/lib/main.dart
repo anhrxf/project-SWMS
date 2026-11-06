@@ -1379,6 +1379,12 @@ class _ReportTile extends StatelessWidget {
         'Sampah Plastik',
       ),
       'paper' => (_amber50, _amber700, _amber100, 'Sampah Kertas'),
+      'other' => (
+        const Color(0xFFF3E8FF),
+        const Color(0xFF7E22CE),
+        const Color(0xFFE9D5FF),
+        'Sampah Campuran',
+      ),
       _ => (_slate50, _slate700, _slate200, 'Sampah Lainnya'),
     };
   }

@@ -36,6 +36,11 @@ RECOMMENDATIONS = {
         "action": "Pastikan tetap kering dan tidak terkena minyak. Lipat rapi untuk didaur ulang.",
         "bin": "Tempat Sampah Biru (Kertas)",
     },
+    "other": {
+        "type": "Pemisahan Sampah / TPS3R",
+        "action": "Tumpukan terdeteksi berisi campuran berbagai jenis sampah. Pisahkan sampah organik dari plastik dan kertas sebelum disalurkan ke TPS3R.",
+        "bin": "Tempat Sampah Terpilah / Residu",
+    },
 }
 
 
@@ -65,31 +70,93 @@ app = FastAPI(
 
 def _predict(image: Image.Image, predictor: tuple[Any, list[str], Any]) -> dict[str, Any]:
     model, classes, image_transform = predictor
-    tensor = image_transform(image).unsqueeze(0).to(DEVICE)
+    width, height = image.size
+
+    # Spatial patches to detect presence of multiple waste types in different regions of the pile
+    boxes = [
+        (0, 0, max(1, int(width * 0.7)), max(1, int(height * 0.7))),
+        (int(width * 0.3), 0, width, max(1, int(height * 0.7))),
+        (0, int(height * 0.3), max(1, int(width * 0.7)), height),
+        (int(width * 0.3), int(height * 0.3), width, height),
+        (int(width * 0.15), int(height * 0.15), max(1, int(width * 0.85)), max(1, int(height * 0.85))),
+    ]
+    patch_tensors = torch.stack(
+        [
+            image_transform(image.crop(box).resize((224, 224), Image.Resampling.BILINEAR))
+            for box in boxes
+        ]
+    ).to(DEVICE)
+    global_tensor = image_transform(image).unsqueeze(0).to(DEVICE)
+
     with torch.inference_mode():
-        original_probabilities = torch.softmax(model(tensor), dim=1)
-        flipped_probabilities = torch.softmax(model(tensor.flip([-1])), dim=1)
+        original_probabilities = torch.softmax(model(global_tensor), dim=1)
+        flipped_probabilities = torch.softmax(model(global_tensor.flip([-1])), dim=1)
         probabilities = (
             (original_probabilities + flipped_probabilities) / 2
         )[0].cpu()
+        patch_probabilities = torch.softmax(model(patch_tensors), dim=1).cpu()
 
+    # Detect categories recognized with significant confidence in sub-regions
+    detected_classes: dict[str, float] = {}
+    for patch_prob in patch_probabilities:
+        top_patch_idx = int(patch_prob.argmax().item())
+        patch_conf = float(patch_prob[top_patch_idx].item())
+        if patch_conf >= 0.50:
+            category_name = classes[top_patch_idx]
+            detected_classes[category_name] = max(
+                detected_classes.get(category_name, 0.0), patch_conf
+            )
+
+    sorted_probabilities, _ = torch.sort(probabilities, descending=True)
     top_index = int(probabilities.argmax().item())
     confidence = float(probabilities[top_index].item())
     view_predictions_agree = int(original_probabilities.argmax().item()) == int(
         flipped_probabilities.argmax().item()
     )
-    classified = confidence >= MIN_CONFIDENCE and view_predictions_agree
-    category = classes[top_index] if classified else None
+
+    # Determine if this image contains mixed waste (tumpukan sampah campuran)
+    is_mixed = False
+    mixed_confidence = 0.0
+    if len(detected_classes) >= 2:
+        is_mixed = True
+        mixed_confidence = round(
+            float(sum(detected_classes.values()) / len(detected_classes) * 100), 2
+        )
+    elif (
+        confidence < MIN_CONFIDENCE
+        and sorted_probabilities[1].item() >= 0.25
+        and (sorted_probabilities[0].item() + sorted_probabilities[1].item()) >= 0.70
+        and (sorted_probabilities[0].item() - sorted_probabilities[1].item()) <= 0.30
+        and len(detected_classes) >= 1
+    ):
+        is_mixed = True
+        mixed_confidence = round(
+            float((sorted_probabilities[0].item() + sorted_probabilities[1].item()) * 100),
+            2,
+        )
+
+    if is_mixed:
+        category = "other"
+        classified = True
+        final_confidence = mixed_confidence
+        message = "Prediksi tersedia: Terdeteksi tumpukan sampah campuran."
+    elif confidence >= MIN_CONFIDENCE and view_predictions_agree:
+        category = classes[top_index]
+        classified = True
+        final_confidence = round(confidence * 100, 2)
+        message = "Prediksi tersedia."
+    else:
+        category = None
+        classified = False
+        final_confidence = round(confidence * 100, 2)
+        message = "AI belum cukup yakin. Pilih kategori secara manual dan gunakan foto yang lebih jelas bila perlu."
+
     return {
         "success": True,
         "status": "classified" if classified else "uncertain",
-        "message": (
-            "Prediksi tersedia."
-            if classified
-            else "AI belum cukup yakin. Pilih kategori secara manual dan gunakan foto yang lebih jelas bila perlu."
-        ),
+        "message": message,
         "category": category,
-        "confidence": round(confidence * 100, 2),
+        "confidence": final_confidence,
         "breakdown": {
             name: round(float(probability.item()) * 100, 2)
             for name, probability in zip(classes, probabilities)

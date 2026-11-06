@@ -642,6 +642,38 @@ class SwmsSystemTest extends TestCase
             ->assertJsonPath('message', 'AI belum cukup yakin.');
     }
 
+    public function test_ai_classify_endpoint_can_detect_mixed_waste(): void
+    {
+        Http::fake([
+            '*' => Http::response([
+                'success' => true,
+                'status' => 'classified',
+                'message' => 'Prediksi tersedia: Terdeteksi tumpukan sampah campuran.',
+                'category' => 'other',
+                'confidence' => 88.5,
+                'breakdown' => [
+                    'organic' => 45.0,
+                    'plastic' => 35.0,
+                    'paper' => 20.0,
+                ],
+                'recommendation' => [
+                    'type' => 'Pemisahan Sampah / TPS3R',
+                    'action' => 'Tumpukan terdeteksi berisi campuran berbagai jenis sampah. Pisahkan sampah organik dari plastik dan kertas sebelum disalurkan ke TPS3R.',
+                    'bin' => 'Tempat Sampah Terpilah / Residu',
+                ],
+            ], 200),
+        ]);
+        $file = UploadedFile::fake()->image('mixed_pile.jpg');
+
+        $this->postJson('/api/v1/ai/classify', ['image' => $file])
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.status', 'classified')
+            ->assertJsonPath('data.category', 'other')
+            ->assertJsonPath('data.label', 'Sampah Campuran (Mixed Waste)')
+            ->assertJsonPath('data.recommendation.type', 'Pemisahan Sampah / TPS3R');
+    }
+
     public function test_report_is_not_saved_when_ml_service_is_unavailable(): void
     {
         Storage::fake('reports');

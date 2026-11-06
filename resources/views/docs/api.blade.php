@@ -121,7 +121,7 @@
                 <code class="text-xs font-bold text-slate-800 font-mono">/ai/classify</code>
                 <span class="ml-auto text-[11px] text-amber-600 font-bold"><i class="fa-solid fa-wand-magic-sparkles"></i> Publik</span>
             </div>
-            <p class="text-xs text-slate-600">Kirim field <code class="bg-slate-100 px-1 rounded">image</code> wajib melalui multipart/form-data (JPEG, PNG, JPG, atau WEBP; maks. 10 MB). Kategori berasal dari model PyTorch melalui FastAPI. Respons berisi confidence, label, breakdown, dan rekomendasi; tidak memerlukan token. Jika AI tidak tersedia, respons HTTP 503.</p>
+            <p class="text-xs text-slate-600">Kirim field <code class="bg-slate-100 px-1 rounded">image</code> wajib melalui multipart/form-data (JPEG, PNG, JPG, atau WEBP; maks. 10 MB). Kategori dideteksi oleh model PyTorch FastAPI, mencakup <code>organic</code>, <code>plastic</code>, <code>paper</code>, serta <code>other</code> (tumpukan sampah campuran). Respons berisi status, confidence, label, breakdown, dan rekomendasi; tidak memerlukan token. Jika AI tidak tersedia, respons HTTP 503.</p>
             <div class="bg-slate-900 text-slate-200 rounded-xl p-3 text-[11px] font-mono overflow-x-auto">
 <pre>{
   "success": true,

@@ -45,6 +45,7 @@ void main() {
 
   test('provides Indonesian labels for known statuses and categories', () {
     expect(WasteReport.categoryLabel('paper'), 'Kertas');
+    expect(WasteReport.categoryLabel('other'), 'Campuran');
     expect(WasteReport.statusLabel('completed'), 'Selesai');
   });
 }

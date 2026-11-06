@@ -53,6 +53,7 @@ class WasteReport {
     'organic' => 'Organik',
     'plastic' => 'Plastik',
     'paper' => 'Kertas',
+    'other' => 'Campuran',
     _ => 'Lainnya',
   };
 

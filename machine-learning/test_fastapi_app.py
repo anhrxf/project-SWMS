@@ -29,6 +29,19 @@ class UncertainModel(nn.Module):
         )
 
 
+class MixedModel(nn.Module):
+    def forward(self, images: torch.Tensor) -> torch.Tensor:
+        if images.shape[0] > 1:
+            return torch.tensor([
+                [3.5, 0.1, 0.1],  # organic
+                [0.1, 0.1, 3.5],  # plastic
+                [3.5, 0.1, 0.1],
+                [0.1, 0.1, 3.5],
+                [0.1, 0.1, 3.5],
+            ], device=images.device)[:images.shape[0]]
+        return torch.tensor([[1.5, 0.2, 1.4]], device=images.device)
+
+
 def _image_bytes() -> bytes:
     buffer = io.BytesIO()
     Image.new("RGB", (32, 32), color="blue").save(buffer, format="JPEG")
@@ -89,6 +102,25 @@ class PredictionEndpointTest(unittest.TestCase):
         self.assertIsNone(response.json()["category"])
         self.assertIsNone(response.json()["recommendation"])
         self.assertIn("belum cukup yakin", response.json()["message"])
+
+    def test_mixed_waste_prediction_is_returned_as_other(self) -> None:
+        self.client.app.state.predictor = (
+            MixedModel(),
+            ["organic", "paper", "plastic"],
+            ToTensor(),
+        )
+
+        response = self.client.post(
+            "/predict",
+            files={"file": ("sample.jpg", _image_bytes(), "image/jpeg")},
+        )
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("classified", response.json()["status"])
+        self.assertEqual("other", response.json()["category"])
+        self.assertIn("sampah campuran", response.json()["message"].lower())
+        self.assertIsNotNone(response.json()["recommendation"])
+        self.assertEqual("Pemisahan Sampah / TPS3R", response.json()["recommendation"]["type"])
 
     def test_empty_invalid_and_oversized_files_are_rejected(self) -> None:
         empty = self.client.post(
