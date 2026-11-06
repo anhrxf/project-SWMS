@@ -25,7 +25,7 @@ def build_model(num_classes: int, pretrained: bool = True) -> nn.Module:
 
     for parameter in model.features.parameters():
         parameter.requires_grad = False
-    for parameter in model.features[-2:].parameters():
+    for parameter in model.features[-4:].parameters():
         parameter.requires_grad = True
 
     input_features = model.classifier[-1].in_features

@@ -227,20 +227,28 @@ def main() -> None:
     print(f"Training device: {device}")
 
     model = build_model(len(classes), pretrained=True).to(device)
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(label_smoothing=0.05)
+    feature_parameters = [
+        parameter for parameter in model.features.parameters() if parameter.requires_grad
+    ]
+    classifier_parameters = [
+        parameter for parameter in model.classifier.parameters() if parameter.requires_grad
+    ]
     optimizer = torch.optim.AdamW(
-        (parameter for parameter in model.parameters() if parameter.requires_grad),
-        lr=1e-3,
-        weight_decay=1e-4,
+        [
+            {"params": feature_parameters, "lr": 1.5e-4, "weight_decay": 1e-4},
+            {"params": classifier_parameters, "lr": 1e-3, "weight_decay": 1e-4},
+        ]
     )
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode="min", factor=0.5, patience=2, min_lr=1e-6
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=args.epochs, eta_min=1e-6
     )
 
+    best_score = float("-inf")
     best_loss = float("inf")
+    best_accuracy = 0.0
     best_state: dict[str, torch.Tensor] | None = None
     best_epoch = 0
-    epochs_without_improvement = 0
     history: list[dict[str, float | int]] = []
 
     for epoch in range(1, args.epochs + 1):
@@ -250,7 +258,7 @@ def main() -> None:
         validation_loss, validation_accuracy = _run_epoch(
             model, validation_loader, criterion, device
         )
-        scheduler.step(validation_loss)
+        scheduler.step()
         history.append(
             {
                 "epoch": epoch,
@@ -266,19 +274,17 @@ def main() -> None:
             f"val_loss={validation_loss:.4f}, val_accuracy={validation_accuracy:.3f}"
         )
 
-        if validation_loss < best_loss:
-            best_loss = validation_loss
-            best_epoch = epoch
-            best_state = {
-                name: value.detach().cpu().clone()
-                for name, value in model.state_dict().items()
-            }
-            epochs_without_improvement = 0
-        else:
-            epochs_without_improvement += 1
-            if epochs_without_improvement >= args.patience:
-                print("Early stopping: validation loss did not improve.")
-                break
+        if epoch >= 3 and train_accuracy >= 0.85:
+            score = validation_accuracy - 0.2 * validation_loss
+            if score > best_score:
+                best_score = score
+                best_accuracy = validation_accuracy
+                best_loss = validation_loss
+                best_epoch = epoch
+                best_state = {
+                    name: value.detach().cpu().clone()
+                    for name, value in model.state_dict().items()
+                }
 
     if best_state is None:
         raise RuntimeError("Training completed without a valid model checkpoint.")
